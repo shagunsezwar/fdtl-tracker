@@ -346,6 +346,7 @@ textarea{resize:none;min-height:160px;font-size:12px;line-height:1.7}
 }
 .swipe-wrap.open .swipe-actions{transform:translateX(0)}
 .swipe-wrap.open .duty-card{transform:translateX(-160px);transition:transform .25s ease}
+.swipe-wrap.open.sb-wrap .duty-card{transform:translateX(-240px)}
 .duty-card{transition:transform .25s ease;border-radius:11px}
 .sw-btn{
   width:80px;display:flex;flex-direction:column;align-items:center;
@@ -529,7 +530,7 @@ Debriefing time: 0220"></textarea>
         <label class="fl">Date</label>
         <input type="date" id="l-date">
       </div>
-      <div class="fg">
+      <div class="fg" id="field-route">
         <label class="fl">Route</label>
         <input type="text" id="l-route" placeholder="BLR-DEL-BLR" oninput="this.value=this.value.toUpperCase();autoLandingsFromRoute()" style="text-transform:uppercase;letter-spacing:1px">
       </div>
@@ -548,7 +549,7 @@ Debriefing time: 0220"></textarea>
 
     <div id="night-auto-label" style="font-size:10px;color:var(--amber);font-weight:600;margin-bottom:8px;display:none">🌙 Night duty — FDP encroaches 0000–0600 local (§2.3.11) — Limits: max FDP 10h, max FT 8h, max 2 landings</div>
 
-    <div class="frow">
+    <div class="frow" id="field-block-land">
       <div class="fg">
         <label class="fl">Block hours (HH:MM)</label>
         <input type="time" id="l-block" style="letter-spacing:1px;font-size:16px;color:var(--text)">
@@ -559,7 +560,7 @@ Debriefing time: 0220"></textarea>
       </div>
     </div>
 
-    <div class="frow">
+    <div class="frow" id="field-crew-night">
       <div class="fg">
         <label class="fl">Crew type</label>
         <select id="l-crew">
@@ -586,7 +587,7 @@ Debriefing time: 0220"></textarea>
 
     <div class="fg">
       <label class="fl">Duty type</label>
-      <select id="l-dtype">
+      <select id="l-dtype" onchange="logDtypeChange()">
         <option value="flight">Flight duty</option>
         <option value="standby-apt">Standby — airport</option>
         <option value="standby-home">Standby — home/hotel</option>
@@ -695,6 +696,14 @@ Debriefing time: 0220"></textarea>
     <div class="rule-item"><span class="rule-ref">§2.7.1</span><strong>Augmented crew FDP (bunk):</strong><br>3-crew → max FT 12h / FDP 16h / 2 ldg<br>4-crew → max FT 14h / FDP 18h / 1 ldg<br>3-crew iso seat → max FDP 15h<br>3-crew basic seat → max FDP 14h</div>
     <div class="rule-item"><span class="rule-ref">§2.8</span><strong>Cumulative flight time limits:</strong><br>7 days → 35h FT / 60h DP<br>14 days → 65h FT / 100h DP<br>28 days → 100h FT / 190h DP<br>90 days → 300h FT / 600h DP<br>365 days → 1000h FT / 1800h DP</div>
     <div class="rule-item"><span class="rule-ref">§2.10.1</span><strong>Minimum rest before flight:</strong> Must be the GREATER of: (a) preceding FDP, OR (b) 12h domestic / 18h for 3–7 TZ crossings / 36h for >7 TZ crossings</div>
+    <div class="rule-item"><span class="rule-ref">§2.11</span><strong>Standby rules:</strong><br>
+      Max standby: <strong>12h</strong> (home/hotel) · <strong>8h</strong> at airport (§2.11.2.1)<br>
+      Airport standby: 100% counts as cumulative duty. If culminates to flight → also counts as FDP (§2.11.2.2)<br>
+      Home/hotel → flight, within 6h: no contribution to FDP or duty (§2.11.2.3a)<br>
+      Home/hotel → flight, ≥6h: 50% of standby counts as FDP (§2.11.2.3b)<br>
+      Home/hotel, no flight: 25% counts as cumulative duty (§2.11.2.4)<br>
+      Rest after standby (no flight): min 12h (§2.10.3.1)
+    </div>
     <div class="rule-item"><span class="rule-ref">§2.10.6</span><strong>Weekly rest:</strong> Min 48 continuous hours including 2 local nights, within every 168-hour period</div>
     <div class="rule-item"><span class="rule-ref">§2.13.1</span><strong>Consecutive night ops:</strong> Max 2 consecutive night duties (0000–0600) in any 168-hour period</div>
     <div class="rule-item"><span class="rule-ref">§2.16.1</span><strong>Unforeseen extensions:</strong> FT +1.5h max, FDP +3h max. Cumulative limit: 4h FT and 8h FDP in any 28 days</div>
@@ -1069,8 +1078,9 @@ function buildDutiesHTML(list, allSorted) {
     const dispBlock  = d.actualBlock !== undefined ? d.actualBlock : d.block;
     const hasActuals = !!(d.actualReport || d.actualDebrief);
     const wrapId = `sw-${d.id}`;
+    const isStandbyCard = d.dtype && d.dtype.startsWith('standby');
 
-    html += `<div class="swipe-wrap" id="${wrapId}" style="margin-bottom:${i<list.length-1?'4px':'12px'}">
+    html += `<div class="swipe-wrap${isStandbyCard && !d.convertedFlight ? ' sb-wrap' : ''}" id="${wrapId}" style="margin-bottom:${i<list.length-1?'4px':'12px'}">
       <div class="duty-card ${cls}" ontouchstart="swipeStart(event,'${wrapId}')" ontouchend="swipeEnd(event,'${wrapId}')">
         <div class="dc-top">
           <div>
@@ -1089,9 +1099,42 @@ function buildDutiesHTML(list, allSorted) {
         </div>
         ${(d.issues||[]).map(x=>`<div class="dc-issue">⛔ ${x}</div>`).join('')}
         ${(d.warns||[]).map(x=>`<div class="dc-warn-msg">⚠ ${x}</div>`).join('')}
+        ${d.convertedFlight ? (() => {
+          const cf = d.convertedFlight;
+          const cfCls = cf.status||'ok';
+          return `<div style="margin-top:10px;padding:10px;
+            background:var(--panel3);border-radius:8px;
+            border-left:3px solid ${cfCls==='ok'?'var(--green)':cfCls==='warn'?'var(--amber)':'var(--red)'}">
+            <div style="font-size:10px;font-weight:700;color:var(--cyan);margin-bottom:7px">
+              ✈ Converted flight — ${cf.route||'—'}
+              <span class="pctag ${cfCls==='ok'?'green':cfCls==='warn'?'amber':'red'}" style="margin-left:6px;font-size:8px">
+                ${cfCls==='ok'?'Legal':cfCls==='warn'?'Advisory':'Illegal'}
+              </span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px">
+              <div class="dcd"><div class="dd-k">Report</div><div class="dd-v" style="color:var(--cyan)">${cf.report}</div></div>
+              <div class="dcd"><div class="dd-k">Debrief</div><div class="dd-v">${cf.debrief}</div></div>
+              <div class="dcd"><div class="dd-k">Total FDP</div><div class="dd-v" style="color:${cfCls==='ok'?'var(--green)':'var(--red)'}">${fmtH(cf.totalFDP)}</div></div>
+              <div class="dcd"><div class="dd-k">Block</div><div class="dd-v">${fmtHHMM(cf.block)}</div></div>
+              <div class="dcd"><div class="dd-k">Landings</div><div class="dd-v">${cf.landings}</div></div>
+              <div class="dcd"><div class="dd-k">SB contrib</div><div class="dd-v">+${fmtH(cf.sbContrib)}</div></div>
+            </div>
+            ${cf.issues.map(x=>`<div class="dc-issue" style="margin-top:4px">⛔ ${x}</div>`).join('')}
+            <button onclick="clearStandbyConvert(${d.id})" style="margin-top:8px;font-size:10px;
+              background:none;border:1px solid var(--edge2);border-radius:5px;
+              color:var(--muted);padding:3px 10px;cursor:pointer;font-family:var(--mono)">
+              ✕ Remove flight
+            </button>
+          </div>`;
+        })() : ''}
         <div style="font-size:9px;color:var(--muted);margin-top:6px;text-align:right;letter-spacing:.3px">← swipe for options</div>
       </div>
       <div class="swipe-actions">
+        ${d.dtype && d.dtype.startsWith('standby') && !d.convertedFlight ? `
+        <button class="sw-btn" style="background:var(--cyan);color:#000"
+          onclick="openStandbyConvertModal(${d.id});closeSwipe('${wrapId}')">
+          <span style="font-size:18px">✈</span><span style="font-size:9px">→Flight</span>
+        </button>` : ''}
         <button class="sw-btn sw-edit" onclick="openActualsModal(${d.id});closeSwipe('${wrapId}')">
           <span style="font-size:18px">✏️</span>Actuals
         </button>
@@ -1107,6 +1150,24 @@ function buildDutiesHTML(list, allSorted) {
 function delDutyFull(id) {
   if (!confirm('Delete this duty?')) return;
   duties=duties.filter(d=>d.id!==id); persist(duties); renderDutiesFull(); renderDash();
+}
+
+function clearStandbyConvert(id) {
+  const idx = duties.findIndex(x => x.id === id);
+  if (idx === -1) return;
+  const sb = duties[idx];
+  // Restore original standby debrief/fdp
+  duties[idx] = {
+    ...sb,
+    convertedFlight: undefined,
+    fdp: calcDutyPeriodH(sb.report, sb.debrief),
+    debrief: sb.debrief,
+    debriefDate: sb.debriefDate,
+    night: 'no'
+  };
+  persist(duties);
+  renderDutiesFull();
+  renderDash();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1917,6 +1978,28 @@ function pushDuty(d) {
 // ══════════════════════════════════════════════════════════
 //  MANUAL LOG
 // ══════════════════════════════════════════════════════════
+// Show/hide flight-only fields based on duty type
+function logDtypeChange() {
+  const dtype = document.getElementById('l-dtype').value;
+  const isStandby = dtype.startsWith('standby');
+  const show = !isStandby;
+  ['field-route', 'field-block-land', 'field-crew-night'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = show ? '' : 'none';
+  });
+  // Also hide night auto label if standby
+  if (isStandby) {
+    document.getElementById('night-auto-label').style.display = 'none';
+  }
+  // Reset values when switching to standby
+  if (isStandby) {
+    document.getElementById('l-route').value = '';
+    document.getElementById('l-block').value = '';
+    document.getElementById('l-land').value = '';
+    document.getElementById('l-night').value = 'no';
+  }
+}
+
 // Format block hours as HH:MM while typing
 function fmtBlockInput(el) {
   let v = el.value.replace(/[^0-9:]/g, '');
@@ -2019,6 +2102,7 @@ function logFlight() {
   const dtype  = document.getElementById('l-dtype').value;
 
   if (!date||!report||!debrief) { alert('Please fill date, report time and debriefing time.'); return; }
+  const isStandby = dtype.startsWith('standby');
 
   // ── Overlap check ──
   // Build the new duty's window: report → debrief (midnight-safe)
@@ -2054,11 +2138,20 @@ Save anyway?`
     if (!confirmed) return;
   }
 
-  const fdp = calcFDPh(report, debrief);
-  const engoff = addMins(debrief, -30);
+  const dutyPeriod = calcDutyPeriodH(report, debrief);
+  const fdp = isStandby ? dutyPeriod : calcFDPh(report, debrief);
+  const engoff = isStandby ? null : addMins(debrief, -30);
   const L = getLimits(land, night, crew);
   const issues=[], warns=[];
-  if (dtype==='flight'||dtype==='training') {
+
+  if (isStandby) {
+    // §2.11.2.1 — Max standby duration
+    const isAirport = dtype === 'standby-apt';
+    const maxSB = isAirport ? 8 : 12; // airport max 8h, home/hotel max 12h
+    if (dutyPeriod > maxSB) issues.push(`Standby ${fmtH(dutyPeriod)} > max ${maxSB}h (§2.11.2.1)`);
+    else if (dutyPeriod > maxSB * 0.9) warns.push(`Standby approaching ${maxSB}h limit (§2.11.2.1)`);
+    // Note: cumulative duty contribution calculated when converting to flight via Duties page
+  } else if (dtype==='flight'||dtype==='training') {
     if (fdp > L.maxFDP) issues.push(`FDP ${fmtH(fdp)} > max ${fmtH(L.maxFDP)} (§2.6.1)`);
     else if (fdp > L.maxFDP*.9) warns.push(`FDP within 10% of max`);
     if (block > L.maxFT) issues.push(`Block ${block}h > max FT ${L.maxFT}h`);
@@ -2119,6 +2212,7 @@ Save anyway?`
   }
 
   ['l-route','l-report','l-debrief','l-block','l-land'].forEach(id=>document.getElementById(id).value='');
+  logDtypeChange(); // restore field visibility
   // Reset night status box
   document.getElementById('night-status-icon').textContent='—';
   document.getElementById('night-status-text').textContent='Enter report time';
@@ -2379,6 +2473,193 @@ function clearActuals(id) {
   persist(duties);
   closeActualsModal();
   renderDutiesFull();
+}
+
+// ══════════════════════════════════════════════════════════
+//  STANDBY → FLIGHT CONVERSION  (§2.11.2.2 / §2.11.2.3)
+// ══════════════════════════════════════════════════════════
+function openStandbyConvertModal(id) {
+  const sb = duties.find(x => x.id === id);
+  if (!sb) return;
+  const existing = document.getElementById('sb-convert-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'sb-convert-modal';
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-sheet">
+      <button class="modal-close" onclick="closeSbModal()">✕ Close</button>
+      <div class="modal-title">Standby → Flight</div>
+      <div class="modal-sub" style="margin-bottom:14px">
+        Standby: ${fmtDate(sb.date)} · ${sb.report}–${sb.debrief}
+        · ${fmtH(sb.fdp)} standby time
+      </div>
+
+      <div class="infobox" style="margin-bottom:14px;font-size:10px">
+        <strong>§2.11 rules applied automatically:</strong><br>
+        Airport standby: 100% of standby counts as FDP + cumulative duty (§2.11.2.2a)<br>
+        Home/hotel standby ≤6h: no FDP contribution (§2.11.2.3a)<br>
+        Home/hotel standby >6h: 50% of standby time added to FDP (§2.11.2.3b)
+      </div>
+
+      <div class="frow" style="margin-bottom:12px">
+        <div class="fg" style="margin:0">
+          <label class="fl">Route</label>
+          <input type="text" id="sbc-route" placeholder="BLR-DEL"
+            oninput="this.value=this.value.toUpperCase()"
+            style="text-transform:uppercase;letter-spacing:1px">
+        </div>
+        <div class="fg" style="margin:0">
+          <label class="fl">Landings</label>
+          <input type="number" id="sbc-land" placeholder="1" min="1" max="6" value="1">
+        </div>
+      </div>
+
+      <div class="frow" style="margin-bottom:12px">
+        <div class="fg" style="margin:0">
+          <label class="fl">Actual report time</label>
+          <input type="time" id="sbc-report" style="font-size:16px;color:var(--cyan)">
+        </div>
+        <div class="fg" style="margin:0">
+          <label class="fl">Actual debrief time</label>
+          <input type="time" id="sbc-debrief" style="font-size:16px">
+        </div>
+      </div>
+
+      <div class="frow" style="margin-bottom:14px">
+        <div class="fg" style="margin:0">
+          <label class="fl">Block hours</label>
+          <input type="time" id="sbc-block" style="font-size:16px">
+        </div>
+        <div class="fg" style="margin:0">
+          <label class="fl">Crew type</label>
+          <select id="sbc-crew">
+            <option value="2p">2-pilot</option>
+            <option value="3c-bunk">3-crew (bunk)</option>
+            <option value="3c-iso">3-crew (iso seat)</option>
+            <option value="3c-basic">3-crew (basic seat)</option>
+            <option value="4c-bunk">4-crew (bunk)</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="sbc-preview" style="font-size:11px;color:var(--muted);margin-bottom:14px;
+        background:var(--panel2);border-radius:8px;padding:10px;line-height:1.8">
+        Enter times to see calculated FDP
+      </div>
+
+      <button class="btn btn-cyan" onclick="saveStandbyConvert(${id})">Convert to flight</button>
+    </div>`;
+
+  document.body.appendChild(modal);
+
+  ['sbc-report','sbc-debrief'].forEach(elId => {
+    document.getElementById(elId).addEventListener('input', updateSbcPreview);
+  });
+
+  function updateSbcPreview() {
+    const r  = document.getElementById('sbc-report').value;
+    const db = document.getElementById('sbc-debrief').value;
+    if (!r || !db) return;
+    const flightFDP = calcFDPh(r, db);
+    const isAirport = sb.dtype === 'standby-apt';
+    const sbH = sb.fdp || 0;
+
+    // §2.11 contribution
+    let sbContrib = 0, note = '';
+    if (isAirport) {
+      sbContrib = sbH;
+      note = `Airport SB: 100% of ${fmtH(sbH)} added to FDP (§2.11.2.2a)`;
+    } else if (sbH <= 6) {
+      sbContrib = 0;
+      note = `Home SB ≤6h: no FDP contribution (§2.11.2.3a)`;
+    } else {
+      sbContrib = sbH * 0.5;
+      note = `Home SB >6h: 50% of ${fmtH(sbH)} = ${fmtH(sbContrib)} added to FDP (§2.11.2.3b)`;
+    }
+    const totalFDP = flightFDP + sbContrib;
+    const night = isNightDuty(r, db) ? '🌙 Night duty' : '';
+    document.getElementById('sbc-preview').innerHTML =
+      `Flight FDP: <strong style="color:var(--cyan)">${fmtH(flightFDP)}</strong><br>
+       SB contribution: <strong>+${fmtH(sbContrib)}</strong> · ${note}<br>
+       Total effective FDP: <strong style="color:var(--text)">${fmtH(totalFDP)}</strong>
+       ${night ? '<br><span style="color:var(--amber)">'+night+'</span>' : ''}`;
+  }
+}
+
+function closeSbModal() {
+  const m = document.getElementById('sb-convert-modal');
+  if (m) m.remove();
+}
+
+function saveStandbyConvert(sbId) {
+  const sbIdx = duties.findIndex(x => x.id === sbId);
+  if (sbIdx === -1) return;
+  const sb = duties[sbIdx];
+
+  const route   = document.getElementById('sbc-route').value.trim();
+  const report  = document.getElementById('sbc-report').value;
+  const debrief = document.getElementById('sbc-debrief').value;
+  const crew    = document.getElementById('sbc-crew').value;
+  const land    = parseInt(document.getElementById('sbc-land').value) || 1;
+  const blockRaw= document.getElementById('sbc-block').value;
+
+  if (!report || !debrief) { alert('Please enter report and debrief times.'); return; }
+
+  let block = 0;
+  if (blockRaw && blockRaw.includes(':')) {
+    const [bh,bm] = blockRaw.split(':').map(Number);
+    block = +(bh + bm/60).toFixed(2);
+  }
+
+  const flightFDP = calcFDPh(report, debrief);
+  const night     = isNightDuty(report, debrief) ? 'yes' : 'no';
+  const isAirport = sb.dtype === 'standby-apt';
+  const sbH       = sb.fdp || 0;
+
+  // §2.11 contribution
+  let sbContrib = 0;
+  if (isAirport)        sbContrib = sbH;
+  else if (sbH > 6)     sbContrib = sbH * 0.5;
+
+  const totalFDP = +(flightFDP + sbContrib).toFixed(2);
+
+  // Compute debriefDate for midnight crossover
+  const [rH,rM] = report.split(':').map(Number);
+  const [dH,dM] = debrief.split(':').map(Number);
+  let debriefDate = sb.date;
+  if ((dH*60+dM) <= (rH*60+rM)) {
+    const d2 = new Date(sb.date+'T12:00:00');
+    d2.setDate(d2.getDate()+1);
+    debriefDate = d2.toISOString().slice(0,10);
+  }
+
+  // FDTL check on total effective FDP
+  const L = getLimits(land, night, '2p');
+  const issues = [], warns = [];
+  if (totalFDP > L.maxFDP) issues.push(`Total FDP ${fmtH(totalFDP)} > max ${fmtH(L.maxFDP)} (§2.6.1)`);
+  if (block > L.maxFT)     issues.push(`Block ${fmtHHMM(block)} > max FT ${L.maxFT}h`);
+  if (land > L.land)       issues.push(`${land} landings > max ${L.land}`);
+
+  // Store converted flight data on the standby duty
+  duties[sbIdx] = {
+    ...sb,
+    convertedFlight: {
+      route, report, debrief, debriefDate, block, landings: land, crew, night,
+      flightFDP, sbContrib, totalFDP, issues, warns,
+      status: issues.length ? 'bad' : warns.length ? 'warn' : 'ok'
+    },
+    // Update the standby's effective FDP/debrief for rest calculations
+    fdp: totalFDP,
+    debrief: debrief,
+    debriefDate: debriefDate,
+    night: night
+  };
+  persist(duties);
+  closeSbModal();
+  renderDutiesFull();
+  renderDash();
 }
 
 // ══════════════════════════════════════════════════════════
