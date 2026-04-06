@@ -1,0 +1,2416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#080c12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FDTL">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<title>FDTL Monitor — IndiGo</title>
+<style>
+/* ══════════════════════════════════════════════
+   DESIGN: Aviation cockpit — dark glass panels,
+   amber/cyan accents, monospace data displays.
+   Feels like an EFB (Electronic Flight Bag).
+══════════════════════════════════════════════ */
+:root {
+  --bg:        #080c12;
+  --panel:     #0d1420;
+  --panel2:    #111927;
+  --panel3:    #172033;
+  --edge:      rgba(255,255,255,.07);
+  --edge2:     rgba(255,255,255,.12);
+  --cyan:      #00d4e8;
+  --cyan-dim:  rgba(0,212,232,.15);
+  --amber:     #f5a623;
+  --amber-dim: rgba(245,166,35,.15);
+  --red:       #ff4d4d;
+  --red-dim:   rgba(255,77,77,.15);
+  --green:     #00e676;
+  --green-dim: rgba(0,230,118,.15);
+  --text:      #dce8f0;
+  --muted:     #5a7080;
+  --mono:      'JetBrains Mono', monospace;
+  --sans:      'Syne', sans-serif;
+  --safe-t:    env(safe-area-inset-top,0px);
+  --safe-b:    env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--mono);overflow:hidden}
+
+/* ── Shell ── */
+#app{display:flex;flex-direction:column;height:100vh;height:100dvh}
+
+/* ── Topbar ── */
+#topbar{
+  background:var(--panel);
+  border-bottom:1px solid var(--edge);
+  padding:calc(var(--safe-t) + 10px) 16px 10px;
+  display:flex;align-items:center;justify-content:space-between;
+  flex-shrink:0;position:sticky;top:0;z-index:50
+}
+.tb-left{display:flex;align-items:center;gap:10px}
+.tb-logo{
+  width:32px;height:32px;border-radius:8px;
+  background:linear-gradient(135deg,var(--cyan),#0080ff);
+  display:flex;align-items:center;justify-content:center;
+  font-size:15px;flex-shrink:0
+}
+.tb-title{font-family:var(--sans);font-size:15px;font-weight:700;letter-spacing:.5px}
+.tb-sub{font-size:9px;color:var(--muted);margin-top:1px;letter-spacing:.8px;text-transform:uppercase}
+.live-clock{font-family:var(--mono);font-size:12px;color:var(--cyan);letter-spacing:1px;font-weight:500}
+
+/* ── Scroller ── */
+#scroller{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(var(--safe-b)+90px)}
+#scroller::-webkit-scrollbar{width:2px}
+#scroller::-webkit-scrollbar-thumb{background:var(--edge2);border-radius:1px}
+
+/* ── Pages ── */
+.page{display:none;padding:14px}
+.page.on{display:block;animation:fadeUp .2s ease}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* ── Navbar ── */
+#nav{
+  position:fixed;bottom:0;left:0;right:0;
+  background:var(--panel);border-top:1px solid var(--edge);
+  display:flex;padding-bottom:var(--safe-b);z-index:100
+}
+.nb{
+  flex:1;display:flex;flex-direction:column;align-items:center;
+  padding:8px 2px;border:none;background:none;color:var(--muted);
+  font-size:9px;font-family:var(--mono);cursor:pointer;gap:3px;
+  transition:color .15s;letter-spacing:.5px;text-transform:uppercase
+}
+.nb .ni{font-size:18px;line-height:1}
+.nb.on{color:var(--cyan)}
+.nb.on .ni-dot{background:var(--cyan)}
+
+/* ── Panel cards ── */
+.pcard{
+  background:var(--panel);border:1px solid var(--edge);
+  border-radius:12px;padding:14px;margin-bottom:12px;
+  position:relative;overflow:hidden
+}
+.pcard::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--edge2),transparent)
+}
+.pchead{
+  font-family:var(--sans);font-size:10px;font-weight:600;
+  letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);
+  margin-bottom:12px;display:flex;align-items:center;justify-content:space-between
+}
+.pctag{
+  font-size:9px;font-weight:600;padding:2px 8px;border-radius:10px;
+  background:var(--cyan-dim);color:var(--cyan);border:1px solid rgba(0,212,232,.3)
+}
+.pctag.amber{background:var(--amber-dim);color:var(--amber);border-color:rgba(245,166,35,.3)}
+.pctag.red{background:var(--red-dim);color:var(--red);border-color:rgba(255,77,77,.3)}
+.pctag.green{background:var(--green-dim);color:var(--green);border-color:rgba(0,230,118,.3)}
+
+/* ── FDP Selector ── */
+.fdp-landing-row{
+  display:flex;gap:6px;margin-bottom:14px;justify-content:space-between
+}
+.ldg-btn{
+  flex:1;padding:7px 2px;border:1px solid var(--edge2);
+  background:var(--panel2);border-radius:8px;
+  font-family:var(--mono);font-size:13px;font-weight:500;
+  color:var(--muted);cursor:pointer;transition:all .15s;
+  display:flex;flex-direction:column;align-items:center;gap:1px;
+  min-width:0
+}
+.ldg-btn:active{transform:scale(.96)}
+
+/* ── FDP Display ── */
+.fdp-display{
+  background:var(--panel2);border:1px solid var(--edge);border-radius:10px;
+  padding:14px;margin-bottom:10px
+}
+.fdp-main-row{display:flex;align-items:flex-end;gap:10px;margin-bottom:8px}
+.fdp-big{font-family:var(--mono);font-size:36px;font-weight:600;letter-spacing:-1px;line-height:1}
+.fdp-big.ok{color:var(--green)}
+.fdp-big.warn{color:var(--amber)}
+.fdp-big.bad{color:var(--red)}
+.fdp-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px}
+.fdp-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px}
+.fdp-cell{background:var(--panel3);border-radius:7px;padding:8px 10px}
+.fdp-cell .fc-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
+.fdp-cell .fc-val{font-size:14px;font-weight:500}
+.fdp-cell .fc-val.cyan{color:var(--cyan)}
+.fdp-cell .fc-val.amber{color:var(--amber)}
+.fdp-cell .fc-val.red{color:var(--red)}
+.fdp-cell .fc-val.green{color:var(--green)}
+
+/* ── Report time input ── */
+.rpt-input-row{display:flex;gap:8px;margin-bottom:12px;align-items:flex-end}
+.rpt-input-row input{
+  flex:1;background:var(--panel2);border:1px solid var(--edge2);
+  color:var(--cyan);border-radius:8px;padding:10px 12px;
+  font-family:var(--mono);font-size:18px;font-weight:500;outline:none;
+  letter-spacing:1px;-webkit-appearance:none
+}
+.rpt-input-row input:focus{border-color:var(--cyan)}
+.rpt-btn{
+  padding:10px 14px;border-radius:8px;border:1px solid var(--edge2);
+  background:var(--panel2);color:var(--muted);
+  font-family:var(--mono);font-size:11px;cursor:pointer;white-space:nowrap
+}
+.rpt-btn.act{border-color:var(--cyan);background:var(--cyan-dim);color:var(--cyan)}
+
+/* ── Night / WOCL badge ── */
+.night-badge{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:10px;font-weight:600;padding:4px 10px;border-radius:20px;
+  background:var(--amber-dim);color:var(--amber);
+  border:1px solid rgba(245,166,35,.3);margin-bottom:10px
+}
+.wocl-badge{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:10px;font-weight:600;padding:4px 10px;border-radius:20px;
+  background:var(--red-dim);color:var(--red);
+  border:1px solid rgba(255,77,77,.3);margin-bottom:10px
+}
+
+/* ── Progress bars ── */
+.prog-block{margin-bottom:9px}
+.prog-head{display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px}
+.prog-head .ph-name{color:var(--muted);font-size:10px;letter-spacing:.5px}
+.prog-head .ph-val{font-weight:500}
+.prog-track{height:5px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden}
+.prog-fill{height:100%;border-radius:3px;transition:width .6s ease}
+.prog-fill.green{background:var(--green)}
+.prog-fill.amber{background:var(--amber)}
+.prog-fill.red{background:var(--red)}
+
+/* ── Next report box ── */
+.nr-box{
+  background:linear-gradient(135deg,rgba(0,212,232,.08),rgba(0,128,255,.06));
+  border:1px solid rgba(0,212,232,.2);border-radius:12px;
+  padding:16px;margin-bottom:12px
+}
+.nr-label{font-size:9px;color:var(--cyan);font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+.nr-time{font-family:var(--mono);font-size:28px;font-weight:600;letter-spacing:-1px;color:var(--text);line-height:1}
+.nr-sub{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.6}
+.nr-sub strong{color:var(--text)}
+
+/* ── Rest card ── */
+.rest-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:8px 0;border-bottom:1px solid var(--edge)
+}
+.rest-row:last-child{border:none}
+.rr-label{font-size:11px;color:var(--muted)}
+.rr-val{font-family:var(--mono);font-size:13px;font-weight:500}
+.rr-status{font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;margin-left:6px}
+.rr-status.ok{background:var(--green-dim);color:var(--green)}
+.rr-status.bad{background:var(--red-dim);color:var(--red)}
+
+/* ── Duty list ── */
+.duty-card{
+  background:var(--panel2);border-radius:10px;padding:13px;
+  margin-bottom:8px;border-left:2px solid var(--edge2);
+  position:relative
+}
+.duty-card.ok{border-color:var(--green)}
+.duty-card.warn{border-color:var(--amber)}
+.duty-card.bad{border-color:var(--red)}
+.dc-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.dc-date{font-family:var(--sans);font-size:14px;font-weight:600}
+.dc-route{font-size:11px;color:var(--muted);margin-top:2px;letter-spacing:.3px}
+.dc-data{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px}
+.dcd{background:var(--panel3);border-radius:6px;padding:7px 8px}
+.dcd .dd-k{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px}
+.dcd .dd-v{font-family:var(--mono);font-size:12px;font-weight:500}
+.dc-issues{margin-top:8px}
+.dc-issue{font-size:10px;color:var(--red);margin-top:3px}
+.dc-warn-msg{font-size:10px;color:var(--amber);margin-top:3px}
+.dc-rest-bar{
+  font-size:11px;margin-top:7px;padding:6px 9px;
+  background:var(--panel3);border-radius:6px;
+  border-left:2px solid var(--muted)
+}
+.dc-rest-bar.ok{border-color:var(--green)}
+.dc-rest-bar.bad{border-color:var(--red)}
+.dc-tags{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}
+.dc-tag{font-size:9px;font-weight:600;padding:2px 7px;border-radius:8px;background:var(--panel3);border:1px solid var(--edge);color:var(--muted);letter-spacing:.3px}
+.dc-tag.night{background:var(--amber-dim);border-color:rgba(245,166,35,.3);color:var(--amber)}
+.dc-tag.wocl{background:var(--red-dim);border-color:rgba(255,77,77,.3);color:var(--red)}
+.dc-del{position:absolute;top:10px;right:10px;background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:2px 4px}
+.dc-del:active{color:var(--red)}
+
+/* ── Forms ── */
+.fg{margin-bottom:12px}
+.fl{display:block;font-size:9px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px}
+input,select,textarea{
+  width:100%;background:var(--panel2);border:1px solid var(--edge2);
+  color:var(--text);border-radius:8px;padding:10px 12px;
+  font-size:13px;font-family:var(--mono);-webkit-appearance:none;outline:none;
+  transition:border-color .15s
+}
+input:focus,select:focus,textarea:focus{border-color:var(--cyan)}
+select{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath fill='%235a7080' d='M5 6L0 0h10z'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 12px center;padding-right:32px
+}
+textarea{resize:none;min-height:160px;font-size:12px;line-height:1.7}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{
+  width:100%;padding:13px;border-radius:10px;border:none;
+  font-size:13px;font-weight:600;font-family:var(--mono);cursor:pointer;
+  transition:all .15s;letter-spacing:.5px
+}
+.btn:active{transform:scale(.98)}
+.btn-cyan{background:var(--cyan);color:#000}
+.btn-ghost{background:var(--panel2);color:var(--text);border:1px solid var(--edge2)}
+.btn-sm{padding:7px 12px;font-size:11px;width:auto;border-radius:7px}
+.btn-red{background:var(--red-dim);color:var(--red);border:1px solid rgba(255,77,77,.3)}
+
+/* ── Stat 2-col grid ── */
+.stat2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.sbox{background:var(--panel2);border:1px solid var(--edge);border-radius:10px;padding:12px}
+.sbox .sb-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+.sbox .sb-val{font-family:var(--mono);font-size:22px;font-weight:600;letter-spacing:-1px;line-height:1}
+.sbox .sb-sub{font-size:9px;color:var(--muted);margin-top:3px}
+.sbox.green .sb-val{color:var(--green)}
+.sbox.amber .sb-val{color:var(--amber)}
+.sbox.red .sb-val{color:var(--red)}
+.sbox.cyan .sb-val{color:var(--cyan)}
+
+/* ── Paste results ── */
+.parse-summary{
+  border-radius:10px;padding:14px;margin-bottom:12px;
+  border:1px solid var(--edge)
+}
+.parse-summary.ok{border-color:rgba(0,230,118,.3);background:var(--green-dim)}
+.parse-summary.warn{border-color:rgba(245,166,35,.3);background:var(--amber-dim)}
+.parse-summary.bad{border-color:rgba(255,77,77,.3);background:var(--red-dim)}
+.ps-title{font-family:var(--sans);font-size:14px;font-weight:700;margin-bottom:4px}
+.ps-sub{font-size:11px;color:var(--muted)}
+
+/* ── Guide page ── */
+.guide-step{
+  background:var(--panel2);border-radius:10px;padding:14px;
+  margin-bottom:10px;display:flex;gap:12px;align-items:flex-start;
+  border:1px solid var(--edge)
+}
+.gs-num{
+  width:28px;height:28px;border-radius:50%;background:var(--cyan);
+  color:#000;font-size:12px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0
+}
+.gs-body{font-size:11px;color:var(--muted);line-height:1.7;margin-top:4px}
+.gs-title{font-family:var(--sans);font-size:13px;font-weight:600;margin-bottom:4px}
+.gs-body code{
+  background:var(--panel3);padding:1px 5px;border-radius:3px;
+  font-size:10px;color:var(--cyan);font-family:var(--mono)
+}
+.rule-item{
+  padding:8px 0;border-bottom:1px solid var(--edge);
+  font-size:11px;line-height:1.6;color:var(--muted)
+}
+.rule-item:last-child{border:none}
+.rule-item strong{color:var(--text)}
+.rule-ref{font-size:9px;color:var(--cyan);font-family:var(--mono);margin-right:6px}
+
+/* ── Slide animation for prev duties ── */
+#prev-duties-list{
+  overflow:hidden;
+  max-height:0;
+  transition:max-height .35s ease, opacity .3s ease;
+  opacity:0;
+}
+#prev-duties-list.slide-open{
+  max-height:9999px;
+  opacity:1;
+}
+
+/* ── Empty state ── */
+.empty{text-align:center;padding:40px 20px;color:var(--muted)}
+.empty-icon{font-size:40px;margin-bottom:10px}
+.empty-text{font-size:12px;line-height:1.6}
+
+/* ── Swipe-to-action ── */
+.swipe-wrap{position:relative;overflow:hidden;margin-bottom:4px;border-radius:11px}
+.swipe-actions{
+  position:absolute;right:0;top:0;bottom:0;
+  display:flex;align-items:stretch;
+  transform:translateX(100%);transition:transform .25s ease;
+  border-radius:0 11px 11px 0;overflow:hidden
+}
+.swipe-wrap.open .swipe-actions{transform:translateX(0)}
+.swipe-wrap.open .duty-card{transform:translateX(-160px);transition:transform .25s ease}
+.duty-card{transition:transform .25s ease;border-radius:11px}
+.sw-btn{
+  width:80px;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:4px;border:none;cursor:pointer;
+  font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.3px
+}
+.sw-del{background:var(--red);color:#fff}
+.sw-edit{background:var(--amber);color:#000}
+.sw-hint{
+  text-align:center;font-size:9px;color:var(--muted);
+  margin-bottom:6px;letter-spacing:.3px
+}
+
+/* ── Actuals modal ── */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;
+  display:flex;align-items:flex-end;justify-content:center;
+  animation:fadeIn .15s ease
+}
+.modal-sheet{
+  background:var(--panel);border-radius:20px 20px 0 0;
+  padding:20px 16px calc(var(--safe-b)+20px);width:100%;
+  max-height:85vh;overflow-y:auto;
+  animation:slideUp .2s ease
+}
+@keyframes slideUp{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}
+.modal-title{font-family:var(--sans);font-size:16px;font-weight:700;margin-bottom:4px}
+.modal-sub{font-size:11px;color:var(--muted);margin-bottom:16px}
+.modal-close{float:right;background:var(--panel2);border:1px solid var(--edge2);border-radius:8px;padding:4px 12px;font-family:var(--mono);font-size:12px;color:var(--muted);cursor:pointer}
+
+/* ── Section label ── */
+.slbl{font-size:9px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;margin-top:4px}
+
+/* ── Info box ── */
+.infobox{
+  background:rgba(0,212,232,.05);border:1px solid rgba(0,212,232,.15);
+  border-radius:9px;padding:11px 13px;font-size:11px;
+  color:var(--muted);line-height:1.6;margin-bottom:12px
+}
+.infobox strong{color:var(--text)}
+
+/* ── Divider ── */
+.div{border:none;border-top:1px solid var(--edge);margin:14px 0}
+
+/* ── Night auto badge ── */
+#night-auto-label{
+  display:none;font-size:10px;color:var(--amber);
+  font-weight:600;margin-top:4px;letter-spacing:.3px
+}
+
+/* ── Tab switcher ── */
+.tabs{display:flex;background:var(--panel2);border-radius:9px;padding:3px;gap:3px;margin-bottom:14px}
+.tab{
+  flex:1;padding:8px 4px;border:none;background:none;
+  color:var(--muted);font-size:10px;font-weight:600;
+  border-radius:7px;cursor:pointer;font-family:var(--mono);
+  transition:all .15s;text-transform:uppercase;letter-spacing:.5px
+}
+.tab.on{background:var(--panel);color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.4)}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- TOPBAR -->
+<div id="topbar">
+  <div class="tb-left">
+    <div class="tb-logo">✈</div>
+    <div>
+      <div class="tb-title">FDTL Monitor</div>
+      <div class="tb-sub">IndiGo · OMA Ch.2 · TR13/2026</div>
+    </div>
+  </div>
+  <div class="live-clock" id="live-clock">--:--</div>
+</div>
+
+<div id="scroller">
+
+<!-- ═══════════════════════════════════
+     PAGE 1 — DASHBOARD
+═══════════════════════════════════ -->
+<div id="page-dash" class="page on">
+
+  <!-- Next duty / current duty card — auto populated from logged duties -->
+  <div id="nr-box-el"></div>
+
+  <!-- FDP limits table — info only, based on next/current duty report time -->
+  <div class="pcard">
+    <div class="pchead">
+      FDP limits — §2.6.1
+      <span class="pctag" id="fdp-mode-tag">Day duty</span>
+    </div>
+
+    <!-- Night / WOCL indicators -->
+    <div id="night-badge-el" style="display:none" class="night-badge">🌙 Night duty — limits reduced (§2.6.1.4)</div>
+    <div id="wocl-badge-el" style="display:none" class="wocl-badge">⚠ WOCL encroachment detected — see table below</div>
+
+    <!-- FDP limits info table — rendered by JS -->
+    <div id="ldg-row"><!-- Rendered by JS --></div>
+  </div>
+
+  <!-- CUMULATIVE -->
+  <div class="pcard">
+    <div class="pchead">Cumulative limits <span class="pctag">§2.8</span></div>
+    <div class="slbl">Flight time</div>
+    <div id="cum-ft"></div>
+    <div class="div"></div>
+    <div class="slbl">Duty period</div>
+    <div id="cum-dp"></div>
+  </div>
+
+  <!-- TODAY STATS -->
+  <div class="pcard">
+    <div class="pchead">Today at a glance</div>
+    <div class="stat2" id="today-stats"></div>
+  </div>
+
+</div><!-- end dash -->
+
+<!-- ═══════════════════════════════════
+     PAGE 2 — ROSTER (paste text)
+═══════════════════════════════════ -->
+<div id="page-roster" class="page">
+
+  <div class="infobox">
+    <strong>How to get your roster text:</strong><br>
+    Open eCrew app → your roster → use <strong>Google Lens</strong> to scan it, or long-press to select all text → Copy. Then paste below. The app parses every duty automatically — no AI, no internet needed.
+  </div>
+
+  <div class="frow" style="margin-bottom:12px">
+    <div class="fg" style="margin:0">
+      <label class="fl">Month / Year</label>
+      <input type="month" id="paste-month">
+    </div>
+    <div class="fg" style="margin:0">
+      <label class="fl">Roster type</label>
+      <select id="paste-type">
+        <option value="pre">Pre-roster</option>
+        <option value="update">Update</option>
+        <option value="actual">Actual</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="fg">
+    <label class="fl">Paste roster text here</label>
+    <textarea id="paste-input" placeholder="Paste your eCrew roster text here...
+
+Example:
+01 Wed
+Reporting time: 1520
+6E2013  1620  BLR  IXC  1820
+6E2014  1920  IXC  BLR  2230
+Debriefing time: 2300
+
+03 Fri
+OFG - Golden Day Off
+
+04 Sat
+Reporting time: 2230
+6E441  2330  BLR  DEL  0120
+Debriefing time: 0220"></textarea>
+  </div>
+
+  <button class="btn btn-cyan" onclick="parseRoster()" style="margin-bottom:14px">Parse &amp; Check Roster</button>
+
+  <div id="parse-results"></div>
+
+</div><!-- end roster -->
+
+<!-- ═══════════════════════════════════
+     PAGE 3 — LOG FLIGHT
+═══════════════════════════════════ -->
+<div id="page-log" class="page">
+
+  <div class="pcard">
+    <div class="pchead">Log a flight duty</div>
+
+    <div class="frow">
+      <div class="fg">
+        <label class="fl">Date</label>
+        <input type="date" id="l-date">
+      </div>
+      <div class="fg">
+        <label class="fl">Route</label>
+        <input type="text" id="l-route" placeholder="BLR-DEL-BLR" oninput="this.value=this.value.toUpperCase();autoLandingsFromRoute()" style="text-transform:uppercase;letter-spacing:1px">
+      </div>
+    </div>
+
+    <div class="frow">
+      <div class="fg">
+        <label class="fl">Report time</label>
+        <input type="time" id="l-report" oninput="logNightDetect()">
+      </div>
+      <div class="fg">
+        <label class="fl">Debriefing time</label>
+        <input type="time" id="l-debrief" oninput="logNightDetect()">
+      </div>
+    </div>
+
+    <div id="night-auto-label" style="font-size:10px;color:var(--amber);font-weight:600;margin-bottom:8px;display:none">🌙 Night duty — FDP encroaches 0000–0600 local (§2.3.11) — Limits: max FDP 10h, max FT 8h, max 2 landings</div>
+
+    <div class="frow">
+      <div class="fg">
+        <label class="fl">Block hours (HH:MM)</label>
+        <input type="time" id="l-block" style="letter-spacing:1px;font-size:16px;color:var(--text)">
+      </div>
+      <div class="fg">
+        <label class="fl">Landings</label>
+        <input type="number" id="l-land" placeholder="2" min="1" max="20">
+      </div>
+    </div>
+
+    <div class="frow">
+      <div class="fg">
+        <label class="fl">Crew type</label>
+        <select id="l-crew">
+          <option value="2p">2-pilot</option>
+          <option value="3c-bunk">3-crew (bunk)</option>
+          <option value="3c-iso">3-crew (iso seat)</option>
+          <option value="3c-basic">3-crew (basic seat)</option>
+          <option value="4c-bunk">4-crew (bunk)</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label class="fl">Night duty (§2.3.11)</label>
+        <div id="night-status-box" style="
+          background:var(--panel2);border:1px solid var(--edge2);
+          border-radius:8px;padding:10px 12px;font-size:13px;
+          color:var(--muted);display:flex;align-items:center;gap:8px;
+          min-height:42px">
+          <span id="night-status-icon">—</span>
+          <span id="night-status-text">Enter times above</span>
+          <input type="hidden" id="l-night" value="no">
+        </div>
+      </div>
+    </div>
+
+    <div class="fg">
+      <label class="fl">Duty type</label>
+      <select id="l-dtype">
+        <option value="flight">Flight duty</option>
+        <option value="standby-apt">Standby — airport</option>
+        <option value="standby-home">Standby — home/hotel</option>
+        <option value="positioning">Positioning / Deadhead</option>
+        <option value="training">Training flight</option>
+      </select>
+    </div>
+
+    <!-- §2.10.5 travel penalty checkbox -->
+    <div style="display:flex;align-items:flex-start;gap:10px;background:var(--panel2);border:1px solid var(--edge2);border-radius:8px;padding:11px 12px;margin-bottom:12px">
+      <div style="flex-shrink:0;margin-top:1px">
+        <input type="checkbox" id="l-travel-penalty" checked style="width:18px;height:18px;accent-color:var(--amber);cursor:pointer;background:var(--panel2);border:1px solid var(--edge2);border-radius:3px">
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--amber);margin-bottom:2px">+30 min rest penalty (§2.10.5)</div>
+        <div style="font-size:10px;color:var(--muted);line-height:1.5">Check if transport to/from airport exceeded 30 minutes. Adds 30 min to minimum rest requirement.</div>
+      </div>
+    </div>
+    <button class="btn btn-cyan" onclick="logFlight()">+ Log duty</button>
+  </div>
+
+  <div id="log-result"></div>
+
+</div><!-- end log -->
+
+<!-- ═══════════════════════════════════
+     PAGE 4 — DUTIES (all logged duties)
+═══════════════════════════════════ -->
+<div id="page-duties-full" class="page">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <div class="slbl" style="margin:0">Duties</div>
+    <button class="btn btn-ghost btn-sm" onclick="clearAll()" style="color:var(--red)">Clear all</button>
+  </div>
+  <!-- Toggle for previous duties -->
+  <div id="prev-duties-toggle" style="display:none;margin-bottom:10px">
+    <button onclick="togglePrevDuties()" id="prev-toggle-btn"
+      style="width:100%;padding:11px;background:var(--amber-dim);border:1px solid rgba(245,166,35,.4);
+      border-radius:9px;color:var(--amber);font-family:var(--mono);font-size:11px;
+      cursor:pointer;letter-spacing:.3px;text-align:center;font-weight:600">
+      📂 Show previous duties
+    </button>
+  </div>
+  <div id="prev-duties-list"></div>
+  <div id="duties-full-list"></div>
+</div>
+
+<!-- ═══════════════════════════════════
+     PAGE 5 — GUIDE
+═══════════════════════════════════ -->
+<div id="page-guide" class="page">
+
+  <div class="slbl">How to use this app</div>
+
+  <div class="guide-step">
+    <div class="gs-num">1</div>
+    <div>
+      <div class="gs-title">Dashboard — FDP Calculator</div>
+      <div class="gs-body">
+        Enter your <strong>reporting time</strong> and select the number of landings. The app instantly shows your max FDP, max flight time, and the exact time your FDP expires. Night duty and WOCL are detected automatically based on your times.
+      </div>
+    </div>
+  </div>
+
+  <div class="guide-step">
+    <div class="gs-num">2</div>
+    <div>
+      <div class="gs-title">Paste Roster — getting your text</div>
+      <div class="gs-body">
+        <strong>Option A — Google Lens:</strong> Point your phone camera at your eCrew screen → tap Google Lens → it reads the text → tap "Copy all text".<br><br>
+        <strong>Option B — Long press:</strong> In eCrew, long press on the roster text → Select All → Copy.<br><br>
+        Paste into the Roster page. The app finds every duty with Reporting + Debriefing times, skips OFG/PL/off days, and checks all FDTL limits.
+      </div>
+    </div>
+  </div>
+
+  <div class="guide-step">
+    <div class="gs-num">3</div>
+    <div>
+      <div class="gs-title">Log flights manually</div>
+      <div class="gs-body">
+        Use the Log page to add duties one by one. Enter report and debrief times — FDP is calculated automatically. Night duty is auto-detected. All duties feed your cumulative limits on the Dashboard.
+      </div>
+    </div>
+  </div>
+
+  <div class="guide-step">
+    <div class="gs-num">4</div>
+    <div>
+      <div class="gs-title">Install as an app on your phone</div>
+      <div class="gs-body">
+        Open <strong>myindigofdtl.netlify.app</strong> in Chrome on your Android → tap the <strong>⋮ menu</strong> → <strong>"Add to Home screen"</strong> → Install. Works offline for all features.
+      </div>
+    </div>
+  </div>
+
+  <div class="div"></div>
+  <div class="slbl">FDTL rules reference — IndiGo OMA Ch.2 TR13/2026</div>
+
+  <div class="pcard">
+    <div class="rule-item"><span class="rule-ref">§2.6.1</span><strong>2-pilot FDP limits (day duty)</strong><br>6 ldg → max FT 8h / max FDP 11:00h<br>5 ldg → max FT 8h / max FDP 11:30h<br>4 ldg → max FT 8h / max FDP 12:00h<br>3 ldg → max FT 8h / max FDP 12:30h<br>2 ldg → max FT 9h / max FDP 13:00h<br>1 ldg → max FT 10h / max FDP 13:00h</div>
+    <div class="rule-item"><span class="rule-ref">§2.6.1.4</span><strong>Night duty</strong> (FDP encroaches 0000–0600 local)<br>Max FT 8h · Max FDP 10:00h · Max 2 landings</div>
+    <div class="rule-item"><span class="rule-ref">§2.6.2</span><strong>Duty period</strong> shall not exceed FDP + 1 hour</div>
+    <div class="rule-item"><span class="rule-ref">§2.4.1.2</span><strong>Post-flight duty:</strong> 30 min added after last engine off</div>
+    <div class="rule-item"><span class="rule-ref">§2.4.1.3</span><strong>Local night</strong> = 0000–0800 hrs local time</div>
+    <div class="rule-item"><span class="rule-ref">§2.3.25</span><strong>WOCL</strong> = 0200–0600 local (Window of Circadian Low). FDP starting in WOCL reduced by up to 2h. FDP ending in / encompassing WOCL reduced by 50%.</div>
+    <div class="rule-item"><span class="rule-ref">§2.7.1</span><strong>Augmented crew FDP (bunk):</strong><br>3-crew → max FT 12h / FDP 16h / 2 ldg<br>4-crew → max FT 14h / FDP 18h / 1 ldg<br>3-crew iso seat → max FDP 15h<br>3-crew basic seat → max FDP 14h</div>
+    <div class="rule-item"><span class="rule-ref">§2.8</span><strong>Cumulative flight time limits:</strong><br>7 days → 35h FT / 60h DP<br>14 days → 65h FT / 100h DP<br>28 days → 100h FT / 190h DP<br>90 days → 300h FT / 600h DP<br>365 days → 1000h FT / 1800h DP</div>
+    <div class="rule-item"><span class="rule-ref">§2.10.1</span><strong>Minimum rest before flight:</strong> Must be the GREATER of: (a) preceding FDP, OR (b) 12h domestic / 18h for 3–7 TZ crossings / 36h for >7 TZ crossings</div>
+    <div class="rule-item"><span class="rule-ref">§2.10.6</span><strong>Weekly rest:</strong> Min 48 continuous hours including 2 local nights, within every 168-hour period</div>
+    <div class="rule-item"><span class="rule-ref">§2.13.1</span><strong>Consecutive night ops:</strong> Max 2 consecutive night duties (0000–0600) in any 168-hour period</div>
+    <div class="rule-item"><span class="rule-ref">§2.16.1</span><strong>Unforeseen extensions:</strong> FT +1.5h max, FDP +3h max. Cumulative limit: 4h FT and 8h FDP in any 28 days</div>
+  </div>
+
+  <div style="height:10px"></div>
+</div><!-- end guide -->
+
+</div><!-- end scroller -->
+
+<!-- NAVBAR -->
+<nav id="nav">
+  <button class="nb on" onclick="goPage('dash',this)"><span class="ni">📊</span>Dash</button>
+  <button class="nb" onclick="goPage('roster',this)"><span class="ni">📋</span>Roster</button>
+  <button class="nb" onclick="goPage('log',this)"><span class="ni">✏️</span>Log</button>
+  <button class="nb" onclick="goPage('duties-full',this)"><span class="ni">🗂</span>Duties</button>
+  <button class="nb" onclick="goPage('guide',this)"><span class="ni">📖</span>Guide</button>
+</nav>
+</div><!-- app -->
+
+<script>
+// ══════════════════════════════════════════════════════════
+//  FDTL RULES ENGINE — IndiGo OMA Chapter 2, TR13/2026
+// ══════════════════════════════════════════════════════════
+
+// §2.6.1 — 2-pilot, day duty limits
+const TWO_PILOT = [
+  {land:6, maxFT:8,  maxFDP:11.0},
+  {land:5, maxFT:8,  maxFDP:11.5},
+  {land:4, maxFT:8,  maxFDP:12.0},
+  {land:3, maxFT:8,  maxFDP:12.5},
+  {land:2, maxFT:9,  maxFDP:13.0},
+  {land:1, maxFT:10, maxFDP:13.0},
+];
+// §2.6.1.4 — night duty
+const NIGHT_2P = {land:2, maxFT:8, maxFDP:10.0};
+// §2.7.1 — augmented
+const AUGMENTED = {
+  '3c-bunk':  {maxFT:12, maxFDP:16, land:2},
+  '3c-iso':   {maxFT:12, maxFDP:15, land:2},
+  '3c-basic': {maxFT:12, maxFDP:14, land:2},
+  '4c-bunk':  {maxFT:14, maxFDP:18, land:1},
+};
+// §2.8 — cumulative
+const CUMUL = [
+  {label:'7 days',  days:7,   maxFT:35,   maxDP:60},
+  {label:'14 days', days:14,  maxFT:65,   maxDP:100},
+  {label:'28 days', days:28,  maxFT:100,  maxDP:190},
+  {label:'90 days', days:90,  maxFT:300,  maxDP:600},
+  {label:'365 days',days:365, maxFT:1000, maxDP:1800},
+];
+
+// Get limits for given config
+function getLimits(land, night, crew) {
+  if (crew && crew !== '2p') return AUGMENTED[crew] || AUGMENTED['3c-bunk'];
+  if (night === 'yes' || night === true) return {...NIGHT_2P};
+  return TWO_PILOT.find(r => r.land >= land) || TWO_PILOT[TWO_PILOT.length-1];
+}
+
+// §2.3.11 — detect night duty (FDP crosses 0000–0600)
+function isNightDuty(reportHHMM, debriefHHMM) {
+  if (!reportHHMM || !debriefHHMM) return false;
+  const [rh,rm] = reportHHMM.split(':').map(Number);
+  let [dh,dm]   = debriefHHMM.split(':').map(Number);
+  const startMin = rh*60+rm;
+  let endMin = dh*60+dm;
+  if (endMin <= startMin) endMin += 1440;
+  // Night = 0000–0600 = 0–360 min. Also check if duty crosses into next day 0000
+  return (startMin < 360) || (endMin > 1440) || (endMin > 1440 && endMin-1440 < 360);
+}
+
+// §2.3.25 — detect WOCL encroachment (0200–0600)
+// §2.7 Note 2 — WOCL analysis
+// Returns {type, encroachMins, woclStart, woclEnd} or {type:'none'}
+// type 'starts'  = FDP starts inside WOCL (0200–0600)
+// type 'ends'    = FDP ends inside / fully encompasses WOCL
+// encroachMins   = actual minutes of FDP that fall inside 0200–0600
+function woclEncroach(reportHHMM, debriefHHMM) {
+  if (!reportHHMM || !debriefHHMM) return {type:'none'};
+  const [rh,rm] = reportHHMM.split(':').map(Number);
+  let [dh,dm]   = debriefHHMM.split(':').map(Number);
+  const startMin = rh*60+rm;
+  let endMin = dh*60+dm;
+  if (endMin <= startMin) endMin += 1440;
+
+  // WOCL = 0200–0600 local = 120–360 min
+  // Also check next-day wrap: 1560–1800
+  const wRanges = [[120, 360], [1560, 1800]];
+  let encroachMins = 0, woclStart = null, woclEnd = null;
+
+  for (const [ws, we] of wRanges) {
+    const overlapStart = Math.max(startMin, ws);
+    const overlapEnd   = Math.min(endMin,   we);
+    if (overlapEnd > overlapStart) {
+      encroachMins += overlapEnd - overlapStart;
+      if (woclStart === null) { woclStart = overlapStart % 1440; woclEnd = overlapEnd % 1440; }
+    }
+  }
+
+  if (encroachMins === 0) return {type:'none'};
+
+  // Determine type
+  const startInW = wRanges.some(([ws,we]) => startMin >= ws && startMin < we);
+  return { type: startInW ? 'starts' : 'ends', encroachMins, woclStart, woclEnd };
+}
+
+// §2.3.5.2 — FDP = report → engine off (last flight engine off)
+// §2.4.1.2 — Duty period = FDP + 30min post-flight (debrief)
+// debrief = engine off + 30min, so: FDP = debrief − 30min − report
+// calcFDPh: returns FDP in hours (report → engine off, NOT including debrief)
+function calcFDPh(reportHHMM, debriefHHMM) {
+  if (!reportHHMM || !debriefHHMM) return null;
+  const [rh,rm] = reportHHMM.split(':').map(Number);
+  let [dh,dm]   = debriefHHMM.split(':').map(Number);
+  // Debrief = engine off + 30min → engine off = debrief − 30min
+  let engoffMin = dh*60+dm - 30;
+  let reportMin = rh*60+rm;
+  let diff = engoffMin - reportMin;
+  if (diff < 0) diff += 1440;
+  return +(diff/60).toFixed(2);
+}
+
+// calcDutyPeriodH: Duty period = report → debrief (includes post-flight 30min)
+function calcDutyPeriodH(reportHHMM, debriefHHMM) {
+  if (!reportHHMM || !debriefHHMM) return null;
+  const [rh,rm] = reportHHMM.split(':').map(Number);
+  let [dh,dm]   = debriefHHMM.split(':').map(Number);
+  let diff = (dh*60+dm)-(rh*60+rm);
+  if (diff < 0) diff += 1440;
+  return +(diff/60).toFixed(2);
+}
+
+// §2.7 Note 2 — WOCL FDP reduction
+// WOCL = 0200–0600 per §2.3.25
+// Encroachment = how many minutes of the duty period (up to debrief) fall inside 0200–0600
+// "ends" case: FDP/duty ends inside WOCL → reduction = 50% of encroachment minutes
+// "starts" case: FDP starts inside WOCL → reduction = 100% of encroachment (max 2h)
+// woclInfo = result of woclEncroach() — uses debrief time as window end
+// Returns { effFDP, reductionMins, math }
+function applyWOCL(maxFDP, woclInfo) {
+  if (!woclInfo || woclInfo.type === 'none') return { effFDP: maxFDP, reductionMins: 0, math: '' };
+  const em = woclInfo.encroachMins || 0;
+  let reductionMins = 0, math = '';
+
+  if (woclInfo.type === 'starts') {
+    // FDP starts inside WOCL (0200–0600): 100% of encroachment, max 2h
+    reductionMins = Math.min(em, 120);
+    const toHM = m => m>=60 ? `${Math.floor(m/60)}h ${m%60}m` : `${m}m`;
+    math = `${em}m encroachment × 100% = ${toHM(reductionMins)} reduction (max 2h cap)`;
+  } else {
+    // FDP ends/encompasses WOCL: 50% of encroachment
+    reductionMins = Math.round(em * 0.5);
+    math = `Eng off ${woclInfo.engoffStr||''} → ${em}m past 02:00 × 50% = ${reductionMins}m reduction`;
+  }
+
+  const effFDP = Math.max(0, maxFDP - reductionMins / 60);
+  // Format effFDP as HH:MM for display
+  const effH = Math.floor(effFDP), effM = Math.round((effFDP-effH)*60);
+  const origH = Math.floor(maxFDP), origM = Math.round((maxFDP-origH)*60);
+  const effStr  = String(effH).padStart(2,'0')+':'+String(effM).padStart(2,'0');
+  const origStr = String(origH).padStart(2,'0')+':'+String(origM).padStart(2,'0');
+  math += ` → Max FDP: ${origStr} − ${reductionMins}m = ${effStr}`;
+  return { effFDP: +effFDP.toFixed(2), reductionMins, math };
+}
+
+// Add minutes to HH:MM string — rounds to nearest minute to avoid float drift
+function addMins(hhmm, mins) {
+  const [h,m] = hhmm.split(':').map(Number);
+  let total = Math.round(h*60+m+mins);
+  total = ((total%1440)+1440)%1440;
+  return `${String(Math.floor(total/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`;
+}
+
+// Format hours → Xh Ym
+function fmtHHMM(h){
+  if(h===null||h===undefined||isNaN(h)||!h) return '—';
+  const hh=Math.floor(Math.abs(h));
+  const mm=Math.round((Math.abs(h)-hh)*60);
+  return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');
+}
+function fmtH(h) {
+  if (h===null||h===undefined||isNaN(h)) return '—';
+  const hh=Math.floor(h), mm=Math.round((h-hh)*60);
+  return mm>0 ? `${hh}h ${mm}m` : `${hh}h`;
+}
+
+// Format date string
+function fmtDate(s) {
+  try { return new Date(s+'T12:00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short',weekday:'short'}); }
+  catch { return s; }
+}
+
+function today() { return new Date().toISOString().slice(0,10); }
+
+function bClass(pct) { return pct>=1?'red':pct>=.85?'amber':'green'; }
+function bColor(pct) { return pct>=1?'var(--red)':pct>=.85?'var(--amber)':'var(--green)'; }
+
+// ── Data store ──
+function load() { try{return JSON.parse(localStorage.getItem('fdtl3')||'[]')}catch{return[]} }
+function persist(d) { localStorage.setItem('fdtl3', JSON.stringify(d)); }
+let duties = load();
+
+function filterDays(n) {
+  const cut=new Date(); cut.setDate(cut.getDate()-n); cut.setHours(0,0,0,0);
+  return duties.filter(d=>d.dtype==='flight'&&new Date(d.date)>=cut);
+}
+const sumFT = ds => +ds.reduce((s,d)=>s+(d.block||0),0).toFixed(1);
+const sumDP = ds => +ds.reduce((s,d)=>s+(d.fdp||0),0).toFixed(1);
+
+// ── Navigation ──
+let _clockTimer=null, _dashTimer=null;
+function goPage(name, btn) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.nb').forEach(b=>b.classList.remove('on'));
+  document.getElementById('page-'+name).classList.add('on');
+  btn.classList.add('on');
+  document.getElementById('scroller').scrollTop=0;
+  if (name==='dash') { renderDash(); startDashClock(); }
+  else { if(_dashTimer){clearInterval(_dashTimer);_dashTimer=null;} }
+
+  if (name==='duties-full') renderDutiesFull();
+}
+
+// ── Full duties page — shows upcoming/active, hides completed ──
+let _showPrev = false;
+
+function togglePrevDuties() {
+  _showPrev = !_showPrev;
+  const btn      = document.getElementById('prev-toggle-btn');
+  const prevList = document.getElementById('prev-duties-list');
+  if (_showPrev) {
+    prevList.classList.add('slide-open');
+    btn.textContent = '📂 Hide previous duties';
+  } else {
+    prevList.classList.remove('slide-open');
+    btn.textContent = '📂 Show previous duties';
+  }
+}
+
+function renderDutiesFull() {
+  const el       = document.getElementById('duties-full-list');
+  const prevEl   = document.getElementById('prev-duties-list');
+  const toggleEl = document.getElementById('prev-duties-toggle');
+
+  if (!duties.length) {
+    el.innerHTML='<div class="empty"><div class="empty-icon">🗂</div><div class="empty-text">No duties logged yet.<br>Use the Log page or import from Roster.</div></div>';
+    prevEl.innerHTML=''; toggleEl.style.display='none'; return;
+  }
+
+  const now = new Date();
+  const sorted = [...duties].sort((a,b)=>a.date.localeCompare(b.date));
+
+  // Split duties: completed (debrief in past) vs upcoming/active
+  const prevDuties = [];
+  const upcomingDuties = [];
+  for (const d of sorted) {
+    const debDT = getDebriefDT(d);
+    if (debDT && debDT < now) {
+      prevDuties.push(d);
+    } else {
+      upcomingDuties.push(d);
+    }
+  }
+
+  // Render HTML for both sections
+  prevEl.innerHTML = buildDutiesHTML(prevDuties, sorted);
+  el.innerHTML     = buildDutiesHTML(upcomingDuties, sorted);
+
+  if (prevDuties.length && !upcomingDuties.length) {
+    // ALL duties are completed — auto-show them, no need to toggle
+    toggleEl.style.display = 'none';
+    prevEl.classList.add('slide-open');
+    _showPrev = true;
+    el.innerHTML = '';
+  } else if (prevDuties.length && upcomingDuties.length) {
+    // Mix of past and upcoming — show toggle so user can access prev
+    toggleEl.style.display = 'block';
+    if (_showPrev) prevEl.classList.add('slide-open'); else prevEl.classList.remove('slide-open');
+  } else {
+    // No completed duties yet
+    toggleEl.style.display = 'none';
+  }
+}
+
+function buildDutiesHTML(list, allSorted) {
+  if (!list.length) return '';
+  let html = '';
+  for (let i=0; i<list.length; i++) {
+    const d    = list[i];
+    const dIdx = allSorted.indexOf(d);
+    const prev = dIdx > 0 ? allSorted[dIdx-1] : null;
+
+    // ── Rest calculation — §2.10.1 + §2.10.5
+    //
+    // ACTUAL REST  = next report − (prev debrief + 45min travel)
+    //                This is the real rest the pilot got.
+    //
+    // MIN REQUIRED = MAX(prev FDP, 12h)  [§2.10.1]
+    //
+    // EARLIEST LEGAL REPORT = prev debrief + 45min + MAX(prevFDP,12h) + [+30min §2.10.5] + 45min
+    //   The +30min penalty only affects earliest legal, NOT the actual rest display.
+    //
+    let restH = null, restOk = true, minR = 12, penalty = false, earliestLegalDT = null;
+    if (prev && prev.debrief && d.report) {
+      penalty      = prev.travelPenalty || false;
+      const pDebDT = getDebriefDT(prev);
+      const cRepDT = getReportDT(d);
+
+      // ── Rest window ──
+      // Rest STARTS: prev debrief + 45min (travel home)
+      // Rest ENDS:   next report  − 45min (travel to airport)
+      // Actual rest = (next report − 45min) − (prev debrief + 45min)
+      //             = next report − prev debrief − 90min
+      const restEndDT   = new Date(cRepDT.getTime()   - 45 * 60000);
+      const restStartDT = new Date(pDebDT.getTime()   + 45 * 60000);
+      restH = +((restEndDT - restStartDT) / 3600000).toFixed(2);
+
+      // Min required §2.10.1
+      minR  = Math.max(12, prev.fdp || 0);
+      restOk = restH >= minR;
+
+      // Earliest legal report = debrief + 45min + minRest + [+30min §2.10.5] + 45min
+      const penaltyMins = penalty ? 30 : 0;
+      earliestLegalDT = new Date(pDebDT.getTime() + (45 + minR*60 + penaltyMins + 45) * 60000);
+    }
+
+    // Rest row shown ABOVE the duty card
+    if (restH !== null) {
+      const rAbs   = Math.max(0, restH);
+      const restHH = Math.floor(rAbs);
+      const restMM = Math.round((rAbs - restHH) * 60);
+      const repDT  = getReportDT(d);
+      const legalOk = earliestLegalDT ? repDT >= earliestLegalDT : true;
+      const ok = restOk && legalOk;
+
+      // Format rest window times for display
+      const pDebDT2 = getDebriefDT(prev);
+      const rStart  = new Date(pDebDT2.getTime() + 45*60000);
+      const rEnd    = new Date(repDT.getTime()   - 45*60000);  // fix: use repDT not cRepDT
+      const fmt2    = dt => dt.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false})
+                          + ' ' + dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+      const elStr   = earliestLegalDT ? fmt2(earliestLegalDT) : '—';
+
+      html += `<div style="
+        display:flex;align-items:flex-start;gap:10px;
+        margin:0 4px;padding:9px 12px;
+        background:${ok?'var(--green-dim)':'var(--red-dim)'};
+        border:1px solid ${ok?'rgba(0,230,118,.25)':'rgba(255,77,77,.25)'};
+        border-radius:8px;margin-bottom:6px;font-size:11px">
+        <span style="font-size:16px;margin-top:1px">${ok?'💤':'⛔'}</span>
+        <div style="flex:1">
+          <div style="font-weight:700;color:${restOk?'var(--green)':'var(--red)'}">
+            Rest: ${restHH}h ${String(restMM).padStart(2,'0')}m
+            <span style="font-size:9px;font-weight:400;color:var(--muted);margin-left:4px">(min ${fmtH(minR)} · §2.10.1)</span>
+          </div>
+          <div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.8">
+            Starts: ${fmt2(rStart)} → Ends: ${fmt2(rEnd)}<br>
+            Earliest legal report: <strong style="color:${legalOk?'var(--green)':'var(--red)'}">${elStr}</strong>
+            ${penalty?' <span style="color:var(--amber)">+30m §2.10.5</span>':''}
+            <br>${ok?'✓ Compliant':'⛔ '+(restOk?'Reported before earliest legal time':'Rest below minimum')}
+          </div>
+        </div>
+      </div>`;
+    }
+
+    const cls = d.status||'ok';
+    const lbl = cls==='ok'?'Legal':cls==='warn'?'Advisory':'Illegal';
+    // Use actuals if available, otherwise planned
+    const dispReport = d.actualReport || d.report || '—';
+    const dispDebrief= d.actualDebrief || d.debrief || '—';
+    const dispFDP    = d.actualFdp !== undefined ? d.actualFdp : d.fdp;
+    const dispBlock  = d.actualBlock !== undefined ? d.actualBlock : d.block;
+    const hasActuals = !!(d.actualReport || d.actualDebrief);
+    const wrapId = `sw-${d.id}`;
+
+    html += `<div class="swipe-wrap" id="${wrapId}" style="margin-bottom:${i<list.length-1?'4px':'12px'}">
+      <div class="duty-card ${cls}" ontouchstart="swipeStart(event,'${wrapId}')" ontouchend="swipeEnd(event,'${wrapId}')">
+        <div class="dc-top">
+          <div>
+            <div class="dc-date">${fmtDate(d.date)}${hasActuals?'<span style="font-size:9px;color:var(--cyan);margin-left:6px;font-weight:600">ACTUALS</span>':''}</div>
+            <div class="dc-route">${d.route||d.dtype||'—'}</div>
+          </div>
+          <span class="pctag ${cls==='ok'?'green':cls==='warn'?'amber':'red'}">${lbl}</span>
+        </div>
+        <div class="dc-data">
+          <div class="dcd"><div class="dd-k">Report</div><div class="dd-v" style="color:var(--cyan)">${dispReport}</div></div>
+          <div class="dcd"><div class="dd-k">Debrief</div><div class="dd-v">${dispDebrief}</div></div>
+          <div class="dcd"><div class="dd-k">FDP</div><div class="dd-v" style="color:${cls==='ok'?'var(--green)':cls==='warn'?'var(--amber)':'var(--red)'}">${fmtH(dispFDP)}</div></div>
+          <div class="dcd"><div class="dd-k">Block</div><div class="dd-v">${fmtHHMM(dispBlock)}</div></div>
+          <div class="dcd"><div class="dd-k">Landings</div><div class="dd-v">${d.landings||'—'}</div></div>
+          <div class="dcd"><div class="dd-k">Night?</div><div class="dd-v" style="color:${d.night==='yes'?'var(--amber)':'var(--muted)'}">${d.night==='yes'?'🌙 Yes':'No'}</div></div>
+        </div>
+        ${(d.issues||[]).map(x=>`<div class="dc-issue">⛔ ${x}</div>`).join('')}
+        ${(d.warns||[]).map(x=>`<div class="dc-warn-msg">⚠ ${x}</div>`).join('')}
+        <div style="font-size:9px;color:var(--muted);margin-top:6px;text-align:right;letter-spacing:.3px">← swipe for options</div>
+      </div>
+      <div class="swipe-actions">
+        <button class="sw-btn sw-edit" onclick="openActualsModal(${d.id});closeSwipe('${wrapId}')">
+          <span style="font-size:18px">✏️</span>Actuals
+        </button>
+        <button class="sw-btn sw-del" onclick="delDutyFull(${d.id});closeSwipe('${wrapId}')">
+          <span style="font-size:18px">🗑</span>Delete
+        </button>
+      </div>
+    </div>`;
+  }
+  return html;
+}
+
+function delDutyFull(id) {
+  if (!confirm('Delete this duty?')) return;
+  duties=duties.filter(d=>d.id!==id); persist(duties); renderDutiesFull(); renderDash();
+}
+
+// ══════════════════════════════════════════════════════════
+//  DASHBOARD
+// ══════════════════════════════════════════════════════════
+
+let selLandings = 2;
+
+// §2.6.1 table — day duty max FDP / FT per landing count
+const DAY_LIMITS = {
+  1: {maxFDP:13.0, maxFT:10},
+  2: {maxFDP:13.0, maxFT:9},
+  3: {maxFDP:12.5, maxFT:8},
+  4: {maxFDP:12.0, maxFT:8},
+  5: {maxFDP:11.5, maxFT:8},
+  6: {maxFDP:11.0, maxFT:8},
+};
+
+function buildLandingRow() {
+  const row = document.getElementById('ldg-row');
+  const {reportStr: rptStr, duty: activeDuty} = getActiveDutyReportStr();
+
+  // No duties at all — show empty state
+  if (!duties.length) {
+    row.innerHTML = `<div style="font-size:11px;color:var(--muted);padding:8px 0 4px;text-align:center;letter-spacing:.3px">
+      Log or import duties to see FDP limits for your roster.
+    </div>`;
+    document.getElementById('fdp-mode-tag').textContent = 'Day duty';
+    document.getElementById('fdp-mode-tag').className = 'pctag';
+    document.getElementById('night-badge-el').style.display = 'none';
+    document.getElementById('wocl-badge-el').style.display = 'none';
+    return;
+  }
+
+  // Night mode: ALWAYS use the duty's stored night field.
+  // Never project from report time — that causes false positives (e.g. 12:00 report
+  // projected 13h hits 01:00 next day, incorrectly triggering night mode).
+  // Only if no duty exists do we have nothing to show.
+  const nightMode = activeDuty ? (activeDuty.night === 'yes') : false;
+
+  // Active duty actual FDP (to flag illegal rows)
+  const activeLand  = activeDuty ? (activeDuty.landings || 2) : null;
+  const activeFDPh  = activeDuty ? (activeDuty.fdp || null) : null;  // actual planned FDP hours
+
+  // Night limits (§2.6.1.4)
+  const nightFDP = 10.0, nightFT = 8;
+
+  // Per-row WOCL check:
+  // - Engine-off = report + FDP (theoretical max for each row)
+  // - WOCL = 0200–0600. Encroachment = minutes engine-off falls inside 0200–0600.
+  // - "starts" (report inside WOCL): 100% reduction, max 2h
+  // - "ends" (engine-off inside WOCL): 50% of encroachment minutes
+  //
+  // For the ACTIVE row: if actual debrief is known, use actual engine-off
+  // (debrief − 30min) so the math reflects reality, not worst-case.
+  function rowWocl(maxFDP, isActiveRow) {
+    if (!rptStr) return {dispFDP: maxFDP, woclReduction: 0, math: ''};
+
+    let engoffStr;
+    if (isActiveRow && activeDuty && activeDuty.debrief) {
+      // Use actual engine-off from the logged duty
+      engoffStr = addMins(activeDuty.debrief, -30);
+    } else {
+      // Theoretical: report + this row's max FDP
+      engoffStr = addMins(rptStr, maxFDP * 60);
+    }
+
+    const wi = woclEncroach(rptStr, engoffStr);
+    if (wi.type === 'none') return {dispFDP: maxFDP, woclReduction: 0, math: ''};
+    const wr = applyWOCL(maxFDP, {...wi, engoffStr});
+    return {dispFDP: wr.effFDP, woclReduction: wr.reductionMins, math: wr.math};
+  }
+
+  // Build 6 data rows
+  const tableRows = [1,2,3,4,5,6].map(n => {
+    const base = nightMode
+      ? {maxFDP: nightFDP, maxFT: nightFT}
+      : {maxFDP: DAY_LIMITS[n].maxFDP, maxFT: DAY_LIMITS[n].maxFT};
+    const isActive = n === activeLand;
+    const {dispFDP, woclReduction, math} = rowWocl(base.maxFDP, isActive);
+    // Illegal if active duty's actual FDP exceeds this row's max FDP
+    // OR if it IS the active row and FDP > maxFDP
+    const isIllegal = isActive && activeFDPh !== null && activeFDPh > dispFDP;
+    const expiryStr = rptStr ? addMins(rptStr, Math.round(dispFDP*60)) : '—';
+    // Format as HH:MM
+    const toHHMM = h => {
+      const hh = Math.floor(Math.abs(h)), mm = Math.round((Math.abs(h)-hh)*60);
+      return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');
+    };
+    return {n, ...base, dispFDP, woclReduction, math, isActive, isIllegal, expiryStr, toHHMM};
+  });
+
+  // Has any WOCL?
+  const hasWocl = tableRows.some(r => r.woclReduction > 0);
+
+  // Report time label
+  const rptLabel = rptStr
+    ? `<div style="font-size:9px;color:var(--muted);margin-bottom:10px;letter-spacing:.3px">
+         Reporting: <strong style="color:var(--cyan)">${rptStr}</strong>
+         ${activeDuty ? `· <strong style="color:var(--text)">${activeDuty.route||'—'}</strong> · ${activeDuty.landings||'?'} ldg` : ''}
+         ${nightMode ? ' · <span style="color:var(--amber)">🌙 Night duty</span>' : ''}
+         ${hasWocl   ? ' · <span style="color:var(--red)">⚠ WOCL</span>' : ''}
+       </div>`
+    : `<div style="font-size:10px;color:var(--muted);margin-bottom:10px">Log duties to see FDP expiry times.</div>`;
+
+  // Table header
+  let t = `${rptLabel}
+  <div style="display:grid;grid-template-columns:44px 1fr 72px 52px;gap:0;
+    border-radius:9px;overflow:hidden;border:1px solid var(--edge)">
+    <div style="background:var(--panel3);padding:5px 7px;font-size:9px;color:var(--muted);font-weight:700;letter-spacing:.5px;border-bottom:1px solid var(--edge)">LDG</div>
+    <div style="background:var(--panel3);padding:5px 7px;font-size:9px;color:var(--muted);font-weight:700;letter-spacing:.5px;border-bottom:1px solid var(--edge);border-left:1px solid var(--edge)">MAX FDP</div>
+    <div style="background:var(--panel3);padding:5px 7px;font-size:9px;color:var(--muted);font-weight:700;letter-spacing:.5px;border-bottom:1px solid var(--edge);border-left:1px solid var(--edge)">EXPIRES</div>
+    <div style="background:var(--panel3);padding:5px 7px;font-size:9px;color:var(--muted);font-weight:700;letter-spacing:.5px;border-bottom:1px solid var(--edge);border-left:1px solid var(--edge)">MAX FT</div>`;
+
+  tableRows.forEach(({n, maxFDP, maxFT, dispFDP, woclReduction, math, isActive, isIllegal, expiryStr, toHHMM}, idx) => {
+    const bt = idx > 0 ? 'border-top:1px solid var(--edge);' : '';
+
+    // Row background & accent
+    let bg, accent, textColor, expiryColor;
+    if (isActive && isIllegal) {
+      bg = 'var(--red-dim)'; accent = '3px solid var(--red)';
+      textColor = 'var(--red)'; expiryColor = 'var(--red)';
+    } else if (isActive) {
+      bg = 'var(--cyan-dim)'; accent = '3px solid var(--cyan)';
+      textColor = 'var(--cyan)'; expiryColor = 'var(--text)';
+    } else {
+      bg = idx%2===0 ? 'var(--panel2)' : 'var(--panel3)'; accent = 'none';
+      textColor = 'var(--text)'; expiryColor = 'var(--muted)';
+    }
+
+    const origHHMM = toHHMM(maxFDP);
+    const dispHHMM = toHHMM(dispFDP);
+
+    // FDP cell — show WOCL math in small text below
+    const fdpContent = woclReduction > 0
+      ? `<div style="font-weight:700;font-family:var(--mono);font-size:13px;color:${textColor}">${dispHHMM}</div>
+         <div style="font-size:8px;margin-top:2px;line-height:1.5">
+           <span style="color:var(--muted);text-decoration:line-through">${origHHMM}</span>
+           <span style="color:var(--red)"> −${woclReduction}m</span><br>
+           <span style="color:var(--muted)">${math}</span>
+         </div>`
+      : `<div style="font-weight:700;font-family:var(--mono);font-size:13px;color:${textColor}">${dispHHMM}</div>`;
+
+    const illegalTag = isIllegal
+      ? `<div style="font-size:8px;color:var(--red);font-weight:700;margin-top:2px">⛔ EXCEEDS</div>` : '';
+
+    t += `
+    <div style="background:${bg};padding:8px 7px;font-size:13px;font-weight:700;
+      font-family:var(--mono);color:${textColor};${bt}border-left:${accent}">
+      ${n}${illegalTag}
+    </div>
+    <div style="background:${bg};padding:8px 7px;${bt}border-left:1px solid var(--edge)">
+      ${fdpContent}
+    </div>
+    <div style="background:${bg};padding:8px 7px;font-size:13px;font-weight:600;
+      font-family:var(--mono);color:${expiryColor};${bt}border-left:1px solid var(--edge)">
+      ${expiryStr}
+    </div>
+    <div style="background:${bg};padding:8px 7px;font-size:13px;font-weight:600;
+      font-family:var(--mono);color:var(--muted);${bt}border-left:1px solid var(--edge)">
+      ${String(maxFT).padStart(2,'0')}:00
+    </div>`;
+  });
+
+  t += '</div>';
+
+  // WOCL footnote — §2.3.25 WOCL = 0200–0600
+  if (hasWocl && rptStr) {
+    // Find the active row's WOCL info for the example math
+    const activeRow = tableRows.find(r => r.isActive) || tableRows.find(r => r.woclReduction > 0);
+    const woclType  = activeRow && activeRow.woclReduction > 0
+      ? (activeRow.isActive ? 'active' : 'other') : '';
+    // Re-compute WOCL for active row to get encroach description
+    const exampleMath = activeRow ? activeRow.math : '';
+    const encType = (() => {
+      if (!rptStr) return '';
+      const wi0 = activeRow ? rowWocl(activeRow.maxFDP) : null;
+      if (!wi0 || wi0.woclReduction === 0) return '';
+      // determine starts vs ends
+      const [rh0,rm0] = rptStr.split(':').map(Number);
+      const rMin0 = rh0*60+rm0;
+      return (rMin0 >= 120 && rMin0 < 360) ? 'starts' : 'ends';
+    })();
+    t += `<div style="margin-top:8px;padding:8px 10px;background:var(--red-dim);
+      border:1px solid rgba(255,77,77,.25);border-radius:7px;font-size:10px;line-height:1.8">
+      <strong style="color:var(--red)">⚠ WOCL — §2.3.25 · §2.7 Note 2</strong>
+      <span style="color:var(--muted);margin-left:4px">Window: 02:00–06:00 local</span><br>
+      <span style="color:var(--muted)">
+        ${encType === 'starts'
+          ? 'FDP starts inside WOCL → reduction = 100% of encroachment into 02:00–06:00 (max 2h)'
+          : 'FDP ends inside WOCL → reduction = 50% of encroachment into 02:00–06:00'}
+        ${exampleMath ? '<br>' + exampleMath : ''}
+      </span>
+    </div>`;
+  }
+
+  row.innerHTML = t;
+}
+
+// Get the active report time string — from current/next duty, or null
+function getActiveDutyReportStr() {
+  const now = new Date();
+  const sorted = [...duties].filter(d=>d.dtype==='flight'&&d.report).sort((a,b)=>a.date.localeCompare(b.date));
+  for (const d of sorted) {
+    const repDT = getReportDT(d);
+    const debDT = d.debrief ? getDebriefDT(d) : repDT;
+    // Currently in duty or upcoming
+    if (repDT && now <= debDT) return {reportStr: d.report, duty: d};
+  }
+  return {reportStr: null, duty: null};
+}
+
+function recalcFDP() {
+  const tag = document.getElementById('fdp-mode-tag');
+  const {reportStr: rptStr, duty: activeDuty} = getActiveDutyReportStr();
+
+  // Night mode: use duty's stored field. Do NOT project from report time.
+  const nightMode = activeDuty ? (activeDuty.night === 'yes') : false;
+
+  const L = getLimits(selLandings, nightMode?'yes':'no', '2p');
+
+  // WOCL check
+  let woclInfo = {type:'none'};
+  if (rptStr) {
+    const endFDP = addMins(rptStr, L.maxFDP*60);
+    woclInfo = woclEncroach(rptStr, endFDP);
+  }
+
+  let displayFDP = L.maxFDP;
+  let woclNote = '';
+  if (woclInfo.type !== 'none') {
+    const wr = applyWOCL(L.maxFDP, woclInfo);
+    displayFDP = wr.effFDP;
+    woclNote = wr.math;
+  }
+
+  // Expiry & remaining
+  let expiryStr = '—', remainStr = '—', statusClass = 'ok';
+  if (rptStr) {
+    expiryStr = addMins(rptStr, displayFDP*60);
+    const now = new Date();
+    const [rh,rm] = rptStr.split(':').map(Number);
+    // Build report datetime — use today or tomorrow if report is past midnight
+    let rptDate = new Date(now);
+    rptDate.setHours(rh, rm, 0, 0);
+    if (activeDuty && activeDuty.date) {
+      rptDate = new Date(activeDuty.date + 'T' + rptStr + ':00');
+    }
+    const expDT = new Date(rptDate.getTime() + displayFDP*3600000);
+    const remainMs = expDT - now;
+    if (remainMs > 0) {
+      const remH = Math.floor(remainMs/3600000);
+      const remM = Math.floor((remainMs%3600000)/60000);
+      remainStr = `${remH}h ${String(remM).padStart(2,'0')}m left`;
+      statusClass = remH<1?'bad':remH<2?'warn':'ok';
+    } else if (rptDate > now) {
+      // Not yet in FDP — show time to report
+      const toRepMs = rptDate - now;
+      const trH = Math.floor(toRepMs/3600000);
+      const trM = Math.floor((toRepMs%3600000)/60000);
+      remainStr = `Report in ${trH}h ${String(trM).padStart(2,'0')}m`;
+      statusClass = 'ok';
+    } else {
+      remainStr = 'FDP expired'; statusClass = 'bad';
+    }
+  }
+
+  // Update mode tag
+  tag.textContent = nightMode ? 'Night duty' : 'Day duty';
+  tag.className = nightMode ? 'pctag amber' : 'pctag';
+
+  // Rebuild landing row (updates per-button expiry times)
+  buildLandingRow();
+
+  // Night / WOCL badges
+  document.getElementById('night-badge-el').style.display = nightMode ? 'inline-flex' : 'none';
+  document.getElementById('wocl-badge-el').style.display  = wocl!=='none' ? 'inline-flex' : 'none';
+
+  // Render FDP result display
+  document.getElementById('fdp-display').innerHTML = rptStr ? `
+    <div class="fdp-main-row">
+      <div>
+        <div class="fdp-label">Max FDP from ${rptStr}</div>
+        <div class="fdp-big ${statusClass}">${fmtH(displayFDP)}</div>
+      </div>
+      <div style="margin-left:auto;text-align:right">
+        <div class="fdp-label">Max flight time</div>
+        <div style="font-family:var(--mono);font-size:20px;font-weight:600;color:var(--text)">${fmtH(L.maxFT)}</div>
+      </div>
+    </div>
+    <div class="fdp-row">
+      <div class="fdp-cell"><div class="fc-label">FDP expires</div><div class="fc-val cyan">${expiryStr}</div></div>
+      <div class="fdp-cell"><div class="fc-label">Status</div><div class="fc-val ${statusClass}">${remainStr}</div></div>
+      <div class="fdp-cell"><div class="fc-label">Max landings</div><div class="fc-val">${L.land}</div></div>
+    </div>
+    ${woclInfo.type!=='none'?`<div style="font-size:10px;color:var(--red);margin-top:8px">⚠ WOCL: ${woclNote}</div>`:''}
+    <div style="font-size:9px;color:var(--muted);margin-top:8px">DP limit: ${fmtH(displayFDP+1)} (FDP+1h · §2.6.2)</div>`
+  : `<div style="font-size:12px;color:var(--muted);padding:12px 0">
+      Log or import duties to see FDP calculations based on your actual reporting time.
+    </div>`;
+}
+
+function startDashClock() {
+  if (_dashTimer) clearInterval(_dashTimer);
+  recalcFDP();
+  renderNextReport();
+  _dashTimer = setInterval(()=>{ recalcFDP(); renderNextReport(); }, 60000);
+}
+
+// ═══════════════════════════════════════════════════════
+// REST CALCULATION — §2.10.1 + §2.10.5
+//
+// Chain: Engines off → +30min debrief → +45min travel home
+//        → rest starts → rest ends → +45min travel to airport → Report
+//
+// Min rest = MAX(preceding FDP, 12h)
+// §2.10.5: if travel > 30 min → add 30 min to rest
+//
+// So: nextReportDT = debriefEnd + 45min + minRest [+30min penalty] + 45min
+//                  = debriefEnd + 90min + minRest [+30min if penalty]
+// ═══════════════════════════════════════════════════════
+
+// Get the actual JavaScript Date object for when a duty's debrief ends
+// Correctly handles midnight crossover using stored debriefDate
+function getDebriefDT(duty) {
+  if (!duty) return null;
+  // Use actuals if available
+  const debTime = duty.actualDebrief || duty.debrief;
+  if (!debTime) return null;
+  const debDate = duty.actualDebriefDate || duty.debriefDate;
+  if (debDate) {
+    return new Date(debDate + 'T' + debTime + ':00');
+  }
+  // Legacy: midnight crossover detection
+  const repTime = duty.actualReport || duty.report || '00:00';
+  const repDT = new Date(duty.date + 'T' + repTime + ':00');
+  const debDT = new Date(duty.date + 'T' + debTime + ':00');
+  if (debDT <= repDT) debDT.setDate(debDT.getDate() + 1);
+  return debDT;
+}
+
+function getReportDT(duty) {
+  if (!duty || !(duty.actualReport || duty.report)) return null;
+  const repTime = duty.actualReport || duty.report;
+  return new Date(duty.date + 'T' + repTime + ':00');
+}
+
+
+
+function calcNextReportDT(lastDuty, travelPenalty) {
+  if (!lastDuty || !lastDuty.debrief) return null;
+  // Use getDebriefDT to correctly handle midnight crossover
+  const debriefDT = getDebriefDT(lastDuty);
+  if (!debriefDT) return null;
+  // §2.10.1: min rest = MAX(preceding FDP, 12h)
+  const minRestH = Math.max(12, lastDuty.fdp || 0);
+  // §2.10.5: +30 min if travel > 30 min
+  const penaltyMins = travelPenalty ? 30 : 0;
+  // Travel to home: 45 min (fixed, §2.10.5 specifies 45 min minimum)
+  const travelHome = 45;
+  // Travel to airport next duty: 45 min
+  const travelAirport = 45;
+  // Total offset from debrief end:
+  const totalMins = travelHome + (minRestH * 60) + penaltyMins + travelAirport;
+  return new Date(debriefDT.getTime() + totalMins * 60000);
+}
+
+function renderNextReport() {
+  const el = document.getElementById('nr-box-el');
+  const sorted = [...duties].filter(d=>d.dtype==='flight').sort((a,b)=>a.date.localeCompare(b.date));
+  if (!sorted.length) {
+    el.innerHTML = `<div class="nr-box" style="border-color:rgba(90,112,128,.3)">
+      <div class="nr-label">📋 No duties logged</div>
+      <div class="nr-sub">Log your duties to see next reporting time and FDP calculations.</div>
+    </div>`;
+    return;
+  }
+
+  const now = new Date();
+  const travelPenalty = false; // default — user sets this per-duty on log
+
+  // Find the NEXT upcoming duty (report time in future) or current live duty
+  let nextDuty = null, currentDuty = null, prevDuty = null;
+
+  for (let i = 0; i < sorted.length; i++) {
+    const d = sorted[i];
+    if (!d.report || !d.debrief) continue;
+    const repDT    = getReportDT(d);
+    const debDT    = getDebriefDT(d);  // midnight-safe
+
+    if (repDT && repDT <= now && now <= debDT) {
+      currentDuty = d; // currently in FDP
+      break;
+    }
+    if (repDT > now) {
+      nextDuty = d;
+      prevDuty = i > 0 ? sorted[i-1] : null;
+      break;
+    }
+    // This duty is in the past
+    prevDuty = d;
+  }
+
+  // ── CASE 1: Currently in a duty (FDP live) ──
+  if (currentDuty) {
+    const L = getLimits(currentDuty.landings||2, currentDuty.night||'no', currentDuty.crew||'2p');
+    const repDT    = getReportDT(currentDuty);
+    const debDT    = getDebriefDT(currentDuty);  // midnight-safe
+
+    // FDP expiry = report + maxFDP hours
+    const fdpExpiry = addMins(currentDuty.report, L.maxFDP * 60);
+    const expiryDT  = new Date(repDT.getTime() + L.maxFDP * 3600000);
+
+    const remainMs = expiryDT - now;
+    const remH = Math.floor(remainMs/3600000);
+    const remM = Math.floor((remainMs%3600000)/60000);
+    const expiredFDP = remainMs <= 0;
+
+    // Auto-select landings from current duty
+    selLandings = currentDuty.landings || 2;
+
+    el.innerHTML = `<div class="nr-box" style="border-color:rgba(0,230,118,.35);background:linear-gradient(135deg,rgba(0,230,118,.07),rgba(0,128,80,.05))">
+      <div class="nr-label" style="color:var(--green)">✈ DUTY LIVE — FDP active</div>
+      <div class="nr-time">${currentDuty.route||'—'}</div>
+      <div class="nr-sub">
+        Report: <strong>${currentDuty.report}</strong> · Debrief: <strong>${currentDuty.debrief}</strong><br>
+        FDP expires: <strong style="color:${expiredFDP?'var(--red)':'var(--cyan)'}">${fdpExpiry}</strong>
+        ${!expiredFDP ? ` · <strong style="color:${remH<1?'var(--red)':remH<2?'var(--amber)':'var(--green)'}">${remH}h ${String(remM).padStart(2,'0')}m left</strong>` : ' · <strong style="color:var(--red)">⛔ FDP EXPIRED</strong>'}
+        <br>Max FT: <strong>${L.maxFT}h</strong> · Landings: <strong>${currentDuty.landings||'—'}</strong>
+      </div>
+    </div>`;
+    recalcFDP();
+    return;
+  }
+
+  // ── CASE 2: Next duty coming up ──
+  if (nextDuty) {
+    const repDT = new Date(nextDuty.date+'T'+nextDuty.report+':00');
+    const diffMs = repDT - now;
+    const diffH  = Math.floor(diffMs/3600000);
+    const diffM  = Math.floor((diffMs%3600000)/60000);
+    const L = getLimits(nextDuty.landings||2, nextDuty.night||'no', nextDuty.crew||'2p');
+
+    // Auto-select landings from next duty
+    selLandings = nextDuty.landings || 2;
+
+    // Also show next legal report (from last completed duty)
+    let legalRepStr = '';
+    if (prevDuty && prevDuty.debrief) {
+      const penalty2  = prevDuty.travelPenalty || false;
+      const pDebDT2   = getDebriefDT(prevDuty);
+      const minR2     = Math.max(12, prevDuty.fdp || 0);
+      const penMins2  = penalty2 ? 30 : 0;
+      const rStart2   = new Date(pDebDT2.getTime() + 45 * 60000);
+      const actRest2  = +((repDT - rStart2) / 3600000).toFixed(1);
+      const arHH2     = Math.floor(Math.max(0, actRest2));
+      const arMM2     = Math.round((Math.max(0, actRest2) - arHH2) * 60);
+      const restOk2   = actRest2 >= minR2;
+      const legalDT2  = new Date(pDebDT2.getTime() + (45 + minR2*60 + penMins2 + 45)*60000);
+      const legalOk2  = repDT >= legalDT2;
+      const lStr2     = legalDT2.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false})
+                        + ' · ' + legalDT2.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+      legalRepStr = `<div style="margin-top:8px;padding:8px 10px;background:${(restOk2&&legalOk2)?'var(--green-dim)':'var(--red-dim)'};border-radius:7px;border:1px solid ${(restOk2&&legalOk2)?'rgba(0,230,118,.25)':'rgba(255,77,77,.25)'}">
+        <div style="font-size:11px;font-weight:700;color:${(restOk2&&legalOk2)?'var(--green)':'var(--red)'}">
+          ${(restOk2&&legalOk2)?'✓ Rest compliant':'⛔ '+(restOk2?'Reported before legal time':'Rest below minimum')}
+        </div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.7">
+          Actual rest: <strong style="color:${restOk2?'var(--green)':'var(--red)'}">${arHH2}h ${String(arMM2).padStart(2,'0')}m</strong> (min ${fmtH(minR2)} · §2.10.1)<br>
+          Earliest legal report: <strong style="color:${legalOk2?'var(--green)':'var(--red)'}">${lStr2}</strong>${penalty2?' <span style="color:var(--amber)">+30m §2.10.5</span>':''}
+        </div>
+      </div>`;
+    }
+
+    el.innerHTML = `<div class="nr-box">
+      <div class="nr-label">🕐 Next duty — ${fmtDate(nextDuty.date)}</div>
+      <div class="nr-time">${nextDuty.report} · ${nextDuty.route||'—'}</div>
+      <div class="nr-sub">
+        <strong style="color:var(--amber)">⏳ ${diffH}h ${String(diffM).padStart(2,'0')}m to report</strong>
+        ${nextDuty.night==='yes'?' · <span style="color:var(--amber)">🌙 Night duty</span>':''}
+      </div>
+      ${legalRepStr}
+    </div>`;
+
+    recalcFDP();
+    return;
+  }
+
+  // ── CASE 3: All duties are in the past — show next legal report from last duty ──
+  const last = sorted[sorted.length-1];
+  if (!last.debrief) { el.innerHTML=''; return; }
+
+  const penalty = last.travelPenalty || false;
+  const nextRepDT = calcNextReportDT(last, penalty);
+  if (!nextRepDT) { el.innerHTML=''; return; }
+
+  const diffMs = nextRepDT - now;
+  const isLegal = diffMs <= 0;
+  const totalMins = Math.max(0, Math.ceil(diffMs/60000));
+  const cdH = Math.floor(totalMins/60), cdM = totalMins%60;
+  const minR = Math.max(12, last.fdp||0);
+  const penaltyMins = penalty ? 30 : 0;
+  const debriefDT = getDebriefDT(last);
+
+  // Show breakdown: debrief → rest start → rest end → next report
+  const debTimeStr = debriefDT.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false})
+                   + ' ' + debriefDT.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+  const restStartDT3 = new Date(debriefDT.getTime() + 45*60000);
+  const restEndDT3   = new Date(debriefDT.getTime() + (45 + minR*60)*60000);
+  const restStartStr = restStartDT3.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false});
+  const restEndStr   = restEndDT3.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false})
+                     + ' ' + restEndDT3.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+  const nextRepStr   = nextRepDT.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false})
+                     + ' · ' + nextRepDT.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+  el.innerHTML=`<div class="nr-box" style="${isLegal?'border-color:rgba(0,230,118,.35)':''}">
+    <div class="nr-label">🕐 Earliest legal reporting time</div>
+    <div class="nr-time">${nextRepStr}</div>
+    <div class="nr-sub">
+      <strong style="color:${isLegal?'var(--green)':'var(--amber)'}">⏱ ${isLegal?'Legal to report NOW ✓':`${cdH}h ${String(cdM).padStart(2,'0')}m remaining`}</strong>
+      <br>
+      <span style="font-size:10px;color:var(--muted);line-height:1.8">
+        Debrief: ${debTimeStr}<br>
+        +45min travel → Rest starts: ${restStartStr}<br>
+        Rest ends: ${restEndStr} (${fmtH(minR)} min · §2.10.1)<br>
+        +45min travel → Report: ${nextRepStr}
+        ${penalty?'<br><span style="color:var(--amber)">§2.10.5: +30min added to minimum rest</span>':''}
+      </span>
+    </div>
+  </div>`;
+}
+
+function renderCumulative() {
+  const ftEl = document.getElementById('cum-ft');
+  const dpEl = document.getElementById('cum-dp');
+  ftEl.innerHTML = CUMUL.map(p=>{
+    const v=sumFT(filterDays(p.days)), pct=v/p.maxFT, cls=bClass(pct);
+    return `<div class="prog-block">
+      <div class="prog-head">
+        <span class="ph-name">${p.label}</span>
+        <span class="ph-val" style="color:${bColor(pct)}">${v.toFixed(1)} / ${p.maxFT}h</span>
+      </div>
+      <div class="prog-track"><div class="prog-fill ${cls}" style="width:${Math.min(pct*100,100).toFixed(1)}%"></div></div>
+    </div>`;
+  }).join('');
+  dpEl.innerHTML = CUMUL.map(p=>{
+    const v=sumDP(filterDays(p.days)), pct=v/p.maxDP, cls=bClass(pct);
+    return `<div class="prog-block">
+      <div class="prog-head">
+        <span class="ph-name">${p.label}</span>
+        <span class="ph-val" style="color:${bColor(pct)}">${v.toFixed(1)} / ${p.maxDP}h</span>
+      </div>
+      <div class="prog-track"><div class="prog-fill ${cls}" style="width:${Math.min(pct*100,100).toFixed(1)}%"></div></div>
+    </div>`;
+  }).join('');
+}
+
+function renderRestPeriods() {
+  const card = document.getElementById('rest-card');
+  const el   = document.getElementById('rest-list');
+  const sorted = [...duties].filter(d=>d.dtype==='flight').sort((a,b)=>a.date.localeCompare(b.date));
+  if (sorted.length < 2) { card.style.display='none'; return; }
+  card.style.display='block';
+  const rows = [];
+  for (let i=1; i<sorted.length; i++) {
+    const prev=sorted[i-1], curr=sorted[i];
+    if (!prev.debrief || !curr.report) continue;
+    const prevEnd = new Date(prev.date+'T'+prev.debrief+':00');
+    const currStart = new Date(curr.date+'T'+curr.report+':00');
+    if (currStart <= prevEnd) currStart.setDate(currStart.getDate()+1);
+    const restH = +((currStart-prevEnd)/3600000).toFixed(1);
+    const minR  = Math.max(12, prev.fdp||0);
+    const ok    = restH >= minR;
+    rows.push(`<div class="rest-row">
+      <div>
+        <div class="rr-label">${fmtDate(prev.date)} → ${fmtDate(curr.date)}</div>
+        <div style="font-size:9px;color:var(--muted);margin-top:2px">Min required: ${fmtH(minR)}</div>
+      </div>
+      <div style="text-align:right">
+        <span class="rr-val" style="color:${ok?'var(--green)':'var(--red)'}">${fmtH(restH)}</span>
+        <span class="rr-status ${ok?'ok':'bad'}">${ok?'OK':'SHORT'}</span>
+      </div>
+    </div>`);
+  }
+  el.innerHTML = rows.join('') || '<div style="font-size:11px;color:var(--muted)">No consecutive duties to compare.</div>';
+}
+
+function renderTodayStats() {
+  const tod = duties.filter(d=>d.date===today()&&d.dtype==='flight');
+  const todFT  = sumFT(tod);
+  const todFDP = tod.reduce((mx,d)=>Math.max(mx,d.fdp||0),0);
+  const todLand= tod.reduce((s,d)=>s+(d.landings||0),0);
+  const w7     = sumFT(filterDays(7));
+  document.getElementById('today-stats').innerHTML=`
+    <div class="sbox ${bClass(todFT/10)}"><div class="sb-label">Today flight time</div><div class="sb-val">${todFT.toFixed(1)}</div><div class="sb-sub">/ 10h max</div></div>
+    <div class="sbox ${bClass(todFDP/13)}"><div class="sb-label">Today max FDP</div><div class="sb-val">${todFDP.toFixed(1)}</div><div class="sb-sub">/ 13h</div></div>
+    <div class="sbox ${bClass(todLand/6)}"><div class="sb-label">Landings today</div><div class="sb-val">${todLand}</div><div class="sb-sub">/ 6 max</div></div>
+    <div class="sbox ${bClass(w7/35)}"><div class="sb-label">7-day FT</div><div class="sb-val">${w7.toFixed(1)}</div><div class="sb-sub">/ 35h §2.8.1</div></div>`;
+}
+
+function renderDash() {
+  renderNextReport();
+  renderCumulative();
+  renderRestPeriods();
+  renderTodayStats();
+  buildLandingRow();
+  recalcFDP();
+}
+
+// ══════════════════════════════════════════════════════════
+//  ROSTER TEXT PARSER
+// ══════════════════════════════════════════════════════════
+function parseTimeStr(s) {
+  if (!s) return null;
+  s = s.replace(/[.:]/g,'').trim();
+  if (s.length===3) s='0'+s;
+  if (s.length!==4) return null;
+  const h=parseInt(s.slice(0,2)), m=parseInt(s.slice(2,4));
+  if (isNaN(h)||isNaN(m)||h>23||m>59) return null;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+
+const SKIP_WORDS = ['OFG','GOLDEN DAY OFF','PRIVILEGE LEAVE',' PL ','HOTEL','WEEKLY REST','LAYOVER','DAY OFF','BLANK','LEAVE'];
+
+function parseRoster() {
+  const raw   = document.getElementById('paste-input').value.trim();
+  const month = document.getElementById('paste-month').value;
+  const rtype = document.getElementById('paste-type').value;
+  const el    = document.getElementById('parse-results');
+
+  if (!raw) { alert('Please paste your roster text first.'); return; }
+
+  const year = month ? month.slice(0,4) : String(new Date().getFullYear());
+  const mon  = month ? month.slice(5,7) : String(new Date().getMonth()+1).padStart(2,'0');
+  const lines = raw.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+
+  const isSkip = l => SKIP_WORDS.some(w=>l.toUpperCase().includes(w));
+
+  let parsed=[], i=0;
+  while (i < lines.length) {
+    const line = lines[i];
+    // Day header: starts with 1-2 digit day number
+    const dayMatch = line.match(/^(\d{1,2})\s*(Mon|Tue|Wed|Thu|Fri|Sat|Sun|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)?/i);
+    if (dayMatch && +dayMatch[1]>=1 && +dayMatch[1]<=31) {
+      const dayNum = dayMatch[1].padStart(2,'0');
+      const dateStr = `${year}-${mon}-${dayNum}`;
+      let j=i+1, report=null, debrief=null, sectors=[], blockMins=0, skip=false;
+
+      while (j<lines.length) {
+        const ln=lines[j];
+        // Next day header → stop
+        if (/^\d{1,2}\s*(Mon|Tue|Wed|Thu|Fri|Sat|Sun)/i.test(ln) && ln!==line) break;
+        if (/^\d{1,2}$/.test(ln.trim()) && +ln.trim()>=1 && +ln.trim()<=31 && ln.trim()!==dayNum) break;
+
+        if (isSkip(ln)) { skip=true; j++; continue; }
+
+        // Reporting time
+        const repM = ln.match(/reporting\s*time[:\s]+(\d{3,4})/i);
+        if (repM) { report=parseTimeStr(repM[1]); j++; continue; }
+
+        // Debriefing time
+        const debM = ln.match(/debriefing\s*time[:\s]+(\d{3,4})/i);
+        if (debM) { debrief=parseTimeStr(debM[1]); j++; continue; }
+
+        // Flight sector: FLT DEP ORG DST ARR
+        const secM = ln.match(/([A-Z0-9]{2,8})\s+(\d{4})\s+([A-Z]{3})\s+([A-Z]{3})\s+(\d{4})/i);
+        if (secM) {
+          const dep=parseTimeStr(secM[2]), arr=parseTimeStr(secM[5]);
+          if (dep&&arr) {
+            const [dh,dm]=dep.split(':').map(Number);
+            let [ah,am]=arr.split(':').map(Number);
+            let bm=(ah*60+am)-(dh*60+dm);
+            if (bm<0) bm+=1440;
+            blockMins+=bm;
+            sectors.push(`${secM[3].toUpperCase()}-${secM[4].toUpperCase()}`);
+          }
+          j++; continue;
+        }
+        j++;
+      }
+
+      // Build route
+      let route='';
+      if (sectors.length) {
+        route=sectors[0].split('-')[0];
+        sectors.forEach(s=>{ route+='-'+s.split('-')[1]; });
+      }
+
+      if (!skip && report && debrief) {
+        const fdp = calcFDPh(report, debrief);
+        const block = sectors.length ? +(blockMins/60).toFixed(1) : 0;
+        const land  = sectors.length || 1;
+        // §2.3.11 — debrief is used as FDP end (debrief = engine off + 30 min)
+        const engoff = addMins(debrief, -30);
+        const night  = isNightDuty(report, debrief) ? 'yes' : 'no';
+        parsed.push({date:dateStr, route, report, debrief, engoff, block, landings:land, night, fdp, crew:'2p', dtype:'flight', rosterType:rtype});
+      }
+      i=j;
+    } else { i++; }
+  }
+
+  if (!parsed.length) {
+    el.innerHTML=`<div class="pcard" style="border-color:rgba(245,166,35,.3)">
+      <div style="color:var(--amber);font-weight:700;margin-bottom:8px">⚠️ No duties found</div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.8">
+        The app couldn't find any lines containing <code>Reporting time: HHMM</code> and <code>Debriefing time: HHMM</code>.<br><br>
+        Tips:<br>
+        • Make sure you copied enough text — each duty block needs both reporting and debriefing times<br>
+        • Try Google Lens to extract text from your eCrew screenshot — it's very accurate<br>
+        • Check that the text includes lines like: <code>Reporting time: 1520</code>
+      </div>
+    </div>`;
+    return;
+  }
+
+  // FDTL check each duty + calculate rest
+  let prevDuty=null;
+  const checked = parsed.map(d=>{
+    const L=getLimits(d.landings, d.night, d.crew);
+    const issues=[], warns=[];
+
+    if (d.fdp > L.maxFDP) issues.push(`FDP ${fmtH(d.fdp)} > max ${fmtH(L.maxFDP)} (§2.6.1)`);
+    else if (d.fdp > L.maxFDP*.9) warns.push(`FDP ${fmtH(d.fdp)} — within 10% of max ${fmtH(L.maxFDP)}`);
+    if (d.block > L.maxFT) issues.push(`Block ${d.block}h > max FT ${L.maxFT}h`);
+    if (d.landings > L.land) issues.push(`${d.landings} landings > max ${L.land} (§2.6.1)`);
+
+    let restBefore=null, restOk=true, minRest=12;
+    if (prevDuty&&prevDuty.debrief) {
+      const pEnd   = getDebriefDT(prevDuty);   // midnight-safe
+      const cStart = getReportDT(d);
+      restBefore=+((cStart-pEnd)/3600000).toFixed(1);
+      minRest=Math.max(12, prevDuty.fdp||0);
+      restOk=restBefore>=minRest;
+      if (!restOk) issues.push(`Rest ${fmtH(restBefore)} < min ${fmtH(minRest)} (§2.10.1)`);
+    }
+    prevDuty=d;
+    const status=issues.length?'bad':warns.length?'warn':'ok';
+    return {...d, issues, warns, status, restBefore, restOk, minRest, maxFDP:L.maxFDP, maxFT:L.maxFT};
+  });
+
+  const ill=checked.filter(d=>d.status==='bad').length;
+  const wrn=checked.filter(d=>d.status==='warn').length;
+  const sCls=ill>0?'bad':wrn>0?'warn':'ok';
+  const sIcon=ill>0?'⛔':wrn>0?'⚠️':'✅';
+  const typeLabel={pre:'Pre-Roster',update:'Roster Update',actual:'Actual Roster'}[rtype]||rtype;
+
+  el.innerHTML=`
+    <div class="parse-summary ${sCls}">
+      <div class="ps-title">${sIcon} ${checked.length} duties — ${typeLabel}</div>
+      <div class="ps-sub">${ill} illegal · ${wrn} advisory · ${checked.length-ill-wrn} legal</div>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="btn btn-cyan btn-sm" onclick="importAll()" style="flex:1">⬇ Import all to log</button>
+      </div>
+    </div>
+    ${checked.map((d,idx)=>{
+      const cls=d.status;
+      const lbl=cls==='ok'?'✓ Legal':cls==='warn'?'⚠ Advisory':'⛔ Illegal';
+      return `<div class="duty-card ${cls}">
+        <div class="dc-top">
+          <div><div class="dc-date">${fmtDate(d.date)}</div><div class="dc-route">${d.route||'—'}</div></div>
+          <span class="pctag ${cls==='ok'?'green':cls==='warn'?'amber':'red'}">${lbl}</span>
+        </div>
+        <div class="dc-data">
+          <div class="dcd"><div class="dd-k">Actual FDP</div><div class="dd-v" style="color:${cls==='ok'?'var(--green)':cls==='warn'?'var(--amber)':'var(--red)'}">${fmtH(d.fdp)}</div></div>
+          <div class="dcd"><div class="dd-k">Max FDP</div><div class="dd-v">${fmtH(d.maxFDP)}</div></div>
+          <div class="dcd"><div class="dd-k">Landings</div><div class="dd-v">${d.landings}</div></div>
+          <div class="dcd"><div class="dd-k">Block hrs</div><div class="dd-v">${d.block}h</div></div>
+          <div class="dcd"><div class="dd-k">Report</div><div class="dd-v">${d.report}</div></div>
+          <div class="dcd"><div class="dd-k">Debrief</div><div class="dd-v">${d.debrief}</div></div>
+        </div>
+        ${d.restBefore!==null?`<div class="dc-rest-bar ${d.restOk?'ok':'bad'}">Rest before: <strong style="color:${d.restOk?'var(--green)':'var(--red)'}">${fmtH(d.restBefore)}</strong> / min ${fmtH(d.minRest)} ${d.restOk?'✓':' ⛔ INSUFFICIENT'}</div>`:''}
+        ${d.night==='yes'?'<div style="margin-top:6px"><span class="dc-tag night">🌙 Night duty</span></div>':''}
+        <div class="dc-issues">
+          ${(d.issues||[]).map(x=>`<div class="dc-issue">⛔ ${x}</div>`).join('')}
+          ${(d.warns||[]).map(x=>`<div class="dc-warn-msg">⚠ ${x}</div>`).join('')}
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="importOne(${idx})" style="margin-top:10px;width:100%">⬇ Import this duty</button>
+      </div>`;
+    }).join('')}`;
+
+  window._parsed = checked;
+}
+
+function importOne(idx) {
+  if (!window._parsed) return;
+  pushDuty(window._parsed[idx]);
+  alert(`✅ Duty imported!`);
+  renderDash();
+}
+function importAll() {
+  if (!window._parsed) return;
+  window._parsed.forEach(d=>pushDuty(d));
+  alert(`✅ ${window._parsed.length} duties imported!`);
+  renderDash();
+}
+function pushDuty(d) {
+  const duty={
+    id:Date.now()+Math.random(), date:d.date, route:d.route||'', report:d.report||'',
+    debrief:d.debrief||'', engoff:d.engoff||'', block:d.block||0,
+    landings:d.landings||1, night:d.night||'no', crew:d.crew||'2p',
+    dtype:'flight', fdp:d.fdp||null,
+    status:d.status||'ok', issues:d.issues||[], warns:d.warns||[],
+    rosterType:d.rosterType||'manual'
+  };
+  duties.push(duty);
+  duties.sort((a,b)=>a.date.localeCompare(b.date));
+  persist(duties);
+}
+
+// ══════════════════════════════════════════════════════════
+//  MANUAL LOG
+// ══════════════════════════════════════════════════════════
+// Format block hours as HH:MM while typing
+function fmtBlockInput(el) {
+  let v = el.value.replace(/[^0-9:]/g, '');
+  // Auto-insert colon after 2 digits
+  if (v.length === 2 && !v.includes(':') && el.value.length > el._prev_len) {
+    v = v + ':';
+  }
+  el._prev_len = el.value.length;
+  el.value = v;
+}
+
+// Auto-detect landings from route: BLR-DEL-BLR = 2 dashes = 2 landings
+function autoLandingsFromRoute() {
+  const route = document.getElementById('l-route').value.trim();
+  if (!route) return;
+  // Count hyphens — each hyphen is a sector boundary = one landing
+  const dashes = (route.match(/-/g) || []).length;
+  if (dashes >= 1 && dashes <= 6) {
+    document.getElementById('l-land').value = dashes;
+  }
+}
+
+function logNightDetect() {
+  const r = document.getElementById('l-report').value;
+  const d = document.getElementById('l-debrief').value;
+  const hiddenSel = document.getElementById('l-night');
+  const iconEl    = document.getElementById('night-status-icon');
+  const textEl    = document.getElementById('night-status-text');
+  const box       = document.getElementById('night-status-box');
+  const badge     = document.getElementById('night-auto-label');
+
+  if (!r) {
+    hiddenSel.value = 'no';
+    iconEl.textContent = '—';
+    textEl.textContent = 'Enter report time';
+    box.style.borderColor = 'var(--edge2)';
+    badge.style.display = 'none';
+    return;
+  }
+
+  // §2.3.11: Night duty = FDP encroaches ANY part of 0000–0600
+  // We check BOTH report time AND debrief time against 0000–0600
+  // Also check if FDP crosses midnight into 0000-0600 window
+  const [rh, rm] = r.split(':').map(Number);
+  const rMin = rh * 60 + rm;
+
+  let night = false;
+
+  // Case 1: Report time itself is in 0000–0600 (0–359 min)
+  if (rMin < 360) { night = true; }
+
+  // Case 2: If debrief given, check if debrief ends in 0000–0600
+  if (d && !night) {
+    const [dh, dm] = d.split(':').map(Number);
+    let dMin = dh * 60 + dm;
+    // If debrief is "before" report, it crossed midnight — add 1440
+    if (dMin <= rMin) dMin += 1440;
+    // FDP window: rMin → dMin
+    // Night window: 0–360 (same day) and 1440–1800 (next day = 0000–0600)
+    const nightRanges = [[0, 360], [1440, 1800]];
+    for (const [ns, ne] of nightRanges) {
+      if (rMin < ne && dMin > ns) { night = true; break; }
+    }
+  }
+
+  hiddenSel.value = night ? 'yes' : 'no';
+
+  if (night) {
+    iconEl.textContent = '🌙';
+    textEl.textContent = 'Night duty (auto)';
+    box.style.borderColor = 'var(--amber)';
+    box.style.background = 'rgba(245,166,35,.08)';
+    textEl.style.color = 'var(--amber)';
+    badge.style.display = 'block';
+  } else {
+    iconEl.textContent = '☀️';
+    textEl.textContent = 'Day duty';
+    box.style.borderColor = 'var(--edge2)';
+    box.style.background = 'var(--panel2)';
+    textEl.style.color = 'var(--muted)';
+    badge.style.display = 'none';
+  }
+}
+
+function logFlight() {
+  const date   = document.getElementById('l-date').value;
+  const route  = document.getElementById('l-route').value.trim();
+  const report = document.getElementById('l-report').value;
+  const debrief= document.getElementById('l-debrief').value;
+  // Block hours from time input (HH:MM)
+  const blockRaw = document.getElementById('l-block').value.trim();
+  let block = 0;
+  if (blockRaw && blockRaw.includes(':')) {
+    const [bh, bm] = blockRaw.split(':').map(Number);
+    block = +(bh + bm/60).toFixed(2);
+  }
+  const land   = parseInt(document.getElementById('l-land').value)||1;
+  const crew   = document.getElementById('l-crew').value;
+  const night  = document.getElementById('l-night').value;
+  const dtype  = document.getElementById('l-dtype').value;
+
+  if (!date||!report||!debrief) { alert('Please fill date, report time and debriefing time.'); return; }
+
+  // ── Overlap check ──
+  // Build the new duty's window: report → debrief (midnight-safe)
+  const newRepDT = new Date(date + 'T' + report + ':00');
+  const [rH0,rM0] = report.split(':').map(Number);
+  const [dH0,dM0] = debrief.split(':').map(Number);
+  let newDebDate = date;
+  if ((dH0*60+dM0) <= (rH0*60+rM0)) {
+    const d0 = new Date(date+'T12:00:00'); d0.setDate(d0.getDate()+1);
+    newDebDate = d0.toISOString().slice(0,10);
+  }
+  const newDebDT = new Date(newDebDate + 'T' + debrief + ':00');
+
+  const overlaps = duties.filter(ex => {
+    if (!ex.report || !ex.debrief) return false;
+    const exRep = getReportDT(ex);
+    const exDeb = getDebriefDT(ex);
+    if (!exRep || !exDeb) return false;
+    // Overlap: new starts before existing ends AND new ends after existing starts
+    return newRepDT < exDeb && newDebDT > exRep;
+  });
+
+  if (overlaps.length > 0) {
+    const ov = overlaps[0];
+    const confirmed = confirm(
+      `⚠️ Overlap detected!
+
+This duty (${report}–${debrief} on ${date}) overlaps with:
+${ov.route||ov.dtype||'—'} on ${ov.date} (${ov.report}–${ov.debrief})
+
+Save anyway?`
+    );
+    if (!confirmed) return;
+  }
+
+  const fdp = calcFDPh(report, debrief);
+  const engoff = addMins(debrief, -30);
+  const L = getLimits(land, night, crew);
+  const issues=[], warns=[];
+  if (dtype==='flight'||dtype==='training') {
+    if (fdp > L.maxFDP) issues.push(`FDP ${fmtH(fdp)} > max ${fmtH(L.maxFDP)} (§2.6.1)`);
+    else if (fdp > L.maxFDP*.9) warns.push(`FDP within 10% of max`);
+    if (block > L.maxFT) issues.push(`Block ${block}h > max FT ${L.maxFT}h`);
+    if (land > L.land)   issues.push(`${land} landings > max ${L.land}`);
+  }
+  const status=issues.length?'bad':warns.length?'warn':'ok';
+
+  const travelPenalty = document.getElementById('l-travel-penalty').checked;
+
+  // Compute debriefDate — if debrief time < report time, debrief is NEXT calendar day
+  // Example: report 2026-04-05 22:30, debrief 02:50 → debriefDate = 2026-04-06
+  const [rH, rM] = report.split(':').map(Number);
+  const [dH, dM] = debrief.split(':').map(Number);
+  const rMins = rH * 60 + rM;
+  const dMins = dH * 60 + dM;
+  let debriefDate = date; // same day by default
+  if (dMins <= rMins) {
+    // Crosses midnight — debrief is next calendar day
+    const d2 = new Date(date + 'T12:00:00');
+    d2.setDate(d2.getDate() + 1);
+    debriefDate = d2.toISOString().slice(0, 10);
+  }
+
+  const d={id:Date.now(),date,debriefDate,route,report,debrief,engoff,block,landings:land,night,crew,dtype,fdp,status,issues,warns,rosterType:'manual',travelPenalty};
+  duties.push(d); duties.sort((a,b)=>a.date.localeCompare(b.date)); persist(duties);
+
+  // Show result — auto-dismiss in 3s if legal/advisory, stay if illegal
+  const cls=status==='ok'?'green':status==='warn'?'amber':'red';
+  const resultEl = document.getElementById('log-result');
+  if (status === 'bad') {
+    // Illegal — stay visible, show full details
+    resultEl.innerHTML=`<div class="pcard" style="border-color:var(--red);margin-bottom:12px">
+      <div style="font-family:var(--sans);font-weight:700;margin-bottom:8px;color:var(--red)">⛔ Illegal duty — logged with violations</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">
+        Route: <strong style="color:var(--text)">${route||'—'}</strong> · ${fmtDate(date)}<br>
+        Report: <strong>${report}</strong> · Debrief: <strong>${debrief}</strong> · FDP: <strong>${fmtH(fdp)}</strong>
+      </div>
+      ${issues.map(x=>`<div style="font-size:11px;color:var(--red);margin-top:4px;padding:4px 8px;background:rgba(255,77,77,.08);border-radius:5px">⛔ ${x}</div>`).join('')}
+      ${warns.map(x=>`<div style="font-size:11px;color:var(--amber);margin-top:4px;padding:4px 8px;background:rgba(245,166,35,.08);border-radius:5px">⚠ ${x}</div>`).join('')}
+      <div style="margin-top:10px;font-size:10px;color:var(--muted)">Duty saved. Go to Duties tab to edit or delete.</div>
+    </div>`;
+  } else {
+    // Legal or advisory — brief toast, auto-dismiss after 3 seconds
+    resultEl.innerHTML=`<div style="
+      background:${status==='ok'?'var(--green-dim)':'var(--amber-dim)'};
+      border:1px solid ${status==='ok'?'rgba(0,230,118,.35)':'rgba(245,166,35,.35)'};
+      border-radius:10px;padding:12px 14px;margin-bottom:12px;
+      display:flex;align-items:center;gap:10px;
+      animation:fadeUp .2s ease">
+      <span style="font-size:20px">${status==='ok'?'✅':'⚠️'}</span>
+      <div>
+        <div style="font-family:var(--sans);font-weight:700;font-size:13px">${status==='ok'?'Duty logged — Legal':'Duty logged — Advisory'}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${route||d.dtype||'—'} · ${fmtDate(date)} · FDP ${fmtH(fdp)}</div>
+        ${warns.map(x=>`<div style="font-size:10px;color:var(--amber);margin-top:2px">⚠ ${x}</div>`).join('')}
+      </div>
+    </div>`;
+    setTimeout(()=>{ resultEl.innerHTML=''; }, 3000);
+  }
+
+  ['l-route','l-report','l-debrief','l-block','l-land'].forEach(id=>document.getElementById(id).value='');
+  // Reset night status box
+  document.getElementById('night-status-icon').textContent='—';
+  document.getElementById('night-status-text').textContent='Enter report time';
+  document.getElementById('night-status-box').style.borderColor='var(--edge2)';
+  document.getElementById('night-status-box').style.background='var(--panel2)';
+  document.getElementById('l-night').value='no';
+  document.getElementById('night-auto-label').style.display='none';
+  renderDash();
+}
+
+function renderDuties() {
+  const el=document.getElementById('duties-list');
+  if (!duties.length) {
+    el.innerHTML='<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">No duties logged yet.<br>Log manually above or import from Roster page.</div></div>';
+    return;
+  }
+  const sorted=[...duties].sort((a,b)=>b.date.localeCompare(a.date));
+  el.innerHTML=sorted.map(d=>{
+    const idx=duties.indexOf(d);
+    let restH=null, restOk=true, prevFDP=0, restPenalty=false;
+    if (idx>0) {
+      const prev=duties[idx-1];
+      if (prev.debrief&&d.report) {
+        restPenalty  = prev.travelPenalty || false;
+        const pDebDT  = getDebriefDT(prev);
+        const cRepDT  = getReportDT(d);
+        prevFDP       = prev.fdp || 0;
+        // Actual rest = next report − (prev debrief + 45min)
+        const rStartDT = new Date(pDebDT.getTime() + 45 * 60000);
+        restH  = +((cRepDT - rStartDT) / 3600000).toFixed(2);
+        restOk = restH >= Math.max(12, prevFDP);
+      }
+    }
+    const rtype=d.rosterType||'manual';
+    const rtLabel={pre:'Pre',update:'Update',actual:'Actual',manual:'Manual'}[rtype]||rtype;
+    return `<div class="duty-card ${d.status||'ok'}">
+      <button class="dc-del" onclick="delDuty(${d.id})">✕</button>
+      <div class="dc-top">
+        <div><div class="dc-date">${fmtDate(d.date)}</div><div class="dc-route">${d.route||d.dtype||'—'}</div></div>
+        <span class="pctag ${d.status==='ok'?'green':d.status==='warn'?'amber':'red'}">${d.status==='ok'?'Legal':d.status==='warn'?'Advisory':'Illegal'}</span>
+      </div>
+      <div class="dc-data">
+        <div class="dcd"><div class="dd-k">FDP</div><div class="dd-v">${fmtH(d.fdp)}</div></div>
+        <div class="dcd"><div class="dd-k">Block hrs</div><div class="dd-v">${d.block||0}h</div></div>
+        <div class="dcd"><div class="dd-k">Landings</div><div class="dd-v">${d.landings||'—'}</div></div>
+      </div>
+      \${restH!==null?(()=>{
+        const _rAbs=Math.max(0,restH);
+        const _rHH=Math.floor(_rAbs), _rMM=Math.round((_rAbs-_rHH)*60);
+        const _minR=Math.max(12,prevFDP);
+        const _pen=restPenalty?30:0;
+        const _pDebDT=getDebriefDT(duties[idx-1]);
+        const _elDT=new Date(_pDebDT.getTime()+(45+_minR*60+_pen+45)*60000);
+        const _elStr=_elDT.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false})+' '+_elDT.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+        const _legalOk=getReportDT(d)>=_elDT;
+        return \`<div class="dc-rest-bar \${(restOk&&_legalOk)?'ok':'bad'}">
+          Rest: <strong style="color:\${restOk?'var(--green)':'var(--red)'}">\${_rHH}h \${String(_rMM).padStart(2,'0')}m</strong> / min \${fmtH(_minR)}
+          &nbsp;·&nbsp; Earliest legal: <strong style="color:\${_legalOk?'var(--green)':'var(--red)'}">\${_elStr}</strong>
+          \${restPenalty?'<span style="color:var(--amber);font-size:9px"> +30m §2.10.5</span>':''}
+          \${(restOk&&_legalOk)?'✓':'⛔ SHORT'}
+        </div>\`;
+      })():''}
+      ${(d.issues||[]).map(x=>`<div class="dc-issue">⛔ ${x}</div>`).join('')}
+      <div class="dc-tags">
+        ${d.night==='yes'?'<span class="dc-tag night">🌙 Night</span>':''}
+        <span class="dc-tag">${d.dtype||'flight'}</span>
+        <span class="dc-tag">${rtLabel}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function delDuty(id) {
+  if (!confirm('Delete this duty?')) return;
+  duties=duties.filter(d=>d.id!==id); persist(duties); renderDash();
+}
+function clearAll() {
+  if (!confirm('Delete ALL duties? Cannot be undone.')) return;
+  duties=[]; persist(duties); renderDutiesFull(); renderDash();
+}
+
+// ══════════════════════════════════════════════════════════
+//  SWIPE GESTURES — left swipe reveals Delete / Actuals
+// ══════════════════════════════════════════════════════════
+let _swipeStartX = 0, _swipeStartY = 0;
+
+function swipeStart(e, wrapId) {
+  _swipeStartX = e.touches[0].clientX;
+  _swipeStartY = e.touches[0].clientY;
+}
+
+function swipeEnd(e, wrapId) {
+  const dx = e.changedTouches[0].clientX - _swipeStartX;
+  const dy = e.changedTouches[0].clientY - _swipeStartY;
+  // Only register horizontal swipe if more horizontal than vertical
+  if (Math.abs(dx) < Math.abs(dy) || Math.abs(dx) < 40) return;
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+  if (dx < -40) {
+    // Swipe left — open actions, close any other open
+    document.querySelectorAll('.swipe-wrap.open').forEach(w => {
+      if (w.id !== wrapId) w.classList.remove('open');
+    });
+    wrap.classList.add('open');
+  } else if (dx > 40) {
+    // Swipe right — close
+    wrap.classList.remove('open');
+  }
+}
+
+function closeSwipe(wrapId) {
+  const wrap = document.getElementById(wrapId);
+  if (wrap) wrap.classList.remove('open');
+}
+
+// Close swipe on tap outside
+document.addEventListener('touchstart', e => {
+  if (!e.target.closest('.swipe-wrap')) {
+    document.querySelectorAll('.swipe-wrap.open').forEach(w => w.classList.remove('open'));
+  }
+}, {passive:true});
+
+// ══════════════════════════════════════════════════════════
+//  ACTUALS MODAL
+// ══════════════════════════════════════════════════════════
+function openActualsModal(id) {
+  const d = duties.find(x => x.id === id);
+  if (!d) return;
+
+  // Remove any existing modal
+  const existing = document.getElementById('actuals-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'actuals-modal';
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-sheet">
+      <button class="modal-close" onclick="closeActualsModal()">✕ Close</button>
+      <div class="modal-title">Enter Actual Times</div>
+      <div class="modal-sub">${d.route||d.dtype||'—'} · ${fmtDate(d.date)}</div>
+
+      <div class="frow" style="margin-bottom:12px">
+        <div class="fg" style="margin:0">
+          <label class="fl">Actual report time</label>
+          <input type="time" id="act-report" value="${d.actualReport||d.report||''}"
+            style="font-size:16px;color:var(--cyan);letter-spacing:1px">
+        </div>
+        <div class="fg" style="margin:0">
+          <label class="fl">Actual debriefing time</label>
+          <input type="time" id="act-debrief" value="${d.actualDebrief||d.debrief||''}"
+            style="font-size:16px;letter-spacing:1px">
+        </div>
+      </div>
+
+      <div class="fg" style="margin-bottom:14px">
+        <label class="fl">Actual block hours (HH:MM)</label>
+        <input type="text" id="act-block" value="${fmtHHMM(d.actualBlock||d.block)}"
+          placeholder="03:30" maxlength="5" oninput="fmtBlockInput(this)"
+          style="font-size:16px;letter-spacing:1px">
+      </div>
+
+      <div id="act-preview" style="margin-bottom:14px;font-size:11px;color:var(--muted)">
+        Enter times above to see actual FDP
+      </div>
+
+      <button class="btn btn-cyan" onclick="saveActuals(${id})">Save actuals</button>
+      ${d.actualReport ? `<button class="btn btn-ghost" style="margin-top:8px;color:var(--red)" onclick="clearActuals(${id})">Clear actuals</button>` : ''}
+    </div>`;
+
+  document.body.appendChild(modal);
+
+  // Live preview
+  ['act-report','act-debrief'].forEach(id2 => {
+    document.getElementById(id2).addEventListener('input', updateActPreview);
+  });
+
+  function updateActPreview() {
+    const r = document.getElementById('act-report').value;
+    const db = document.getElementById('act-debrief').value;
+    const prev = document.getElementById('act-preview');
+    if (r && db) {
+      const fdp = calcFDPh(r, db);
+      const night = isNightDuty(r, db);
+      prev.innerHTML = `Actual FDP: <strong style="color:var(--cyan)">${fmtH(fdp)}</strong>${night?' · <span style="color:var(--amber)">🌙 Night duty</span>':''}`;
+    }
+  }
+  updateActPreview();
+}
+
+function closeActualsModal() {
+  const m = document.getElementById('actuals-modal');
+  if (m) m.remove();
+}
+
+function saveActuals(id) {
+  const actualReport = document.getElementById('act-report').value;
+  const actualDebrief= document.getElementById('act-debrief').value;
+  const blockRaw     = document.getElementById('act-block').value.trim();
+
+  let actualBlock = 0;
+  if (blockRaw && blockRaw.includes(':')) {
+    const [bh,bm] = blockRaw.split(':').map(Number);
+    actualBlock = +(bh + bm/60).toFixed(2);
+  }
+
+  const idx = duties.findIndex(x => x.id === id);
+  if (idx === -1) return;
+
+  // Compute actual FDP and debriefDate
+  const actualFdp = (actualReport && actualDebrief) ? calcFDPh(actualReport, actualDebrief) : null;
+  const actualNight = (actualReport && actualDebrief) ? (isNightDuty(actualReport, actualDebrief) ? 'yes' : 'no') : duties[idx].night;
+
+  // Compute actualDebriefDate
+  let actualDebriefDate = duties[idx].date;
+  if (actualReport && actualDebrief) {
+    const [rH2,rM2] = actualReport.split(':').map(Number);
+    const [dH2,dM2] = actualDebrief.split(':').map(Number);
+    if ((dH2*60+dM2) <= (rH2*60+rM2)) {
+      const d2 = new Date(duties[idx].date + 'T12:00:00');
+      d2.setDate(d2.getDate() + 1);
+      actualDebriefDate = d2.toISOString().slice(0,10);
+    }
+  }
+
+  duties[idx] = {
+    ...duties[idx],
+    actualReport, actualDebrief, actualBlock, actualFdp, actualNight, actualDebriefDate,
+    // Update night and fdp to actuals for rest calculations
+    night: actualNight,
+    fdp: actualFdp !== null ? actualFdp : duties[idx].fdp,
+    debriefDate: actualDebriefDate,
+    debrief: actualDebrief || duties[idx].debrief,
+    report: actualReport || duties[idx].report,
+  };
+  persist(duties);
+  closeActualsModal();
+  renderDutiesFull();
+  renderDash();
+}
+
+function clearActuals(id) {
+  const idx = duties.findIndex(x => x.id === id);
+  if (idx === -1) return;
+  const d = duties[idx];
+  // Restore original planned values
+  duties[idx] = {
+    ...d,
+    actualReport: undefined, actualDebrief: undefined, actualBlock: undefined,
+    actualFdp: undefined, actualNight: undefined, actualDebriefDate: undefined,
+    // Restore planned
+    night: d._origNight || d.night,
+    fdp: d._origFdp !== undefined ? d._origFdp : d.fdp,
+    debriefDate: d._origDebriefDate || d.debriefDate,
+    debrief: d._origDebrief || d.debrief,
+    report: d._origReport || d.report,
+  };
+  persist(duties);
+  closeActualsModal();
+  renderDutiesFull();
+}
+
+// ══════════════════════════════════════════════════════════
+//  LIVE CLOCK
+// ══════════════════════════════════════════════════════════
+function tickClock() {
+  const now=new Date();
+  const h=String(now.getUTCHours()).padStart(2,'0');
+  const m=String(now.getUTCMinutes()).padStart(2,'0');
+  const s=String(now.getUTCSeconds()).padStart(2,'0');
+  document.getElementById('live-clock').textContent=`${h}:${m}:${s}Z`;
+}
+
+// ══════════════════════════════════════════════════════════
+//  SERVICE WORKER
+// ══════════════════════════════════════════════════════════
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════════════
+document.getElementById('l-date').value = today();
+const nm=new Date();
+document.getElementById('paste-month').value=`${nm.getFullYear()}-${String(nm.getMonth()+1).padStart(2,'0')}`;
+tickClock();
+_clockTimer = setInterval(tickClock, 1000);
+renderDash();
+startDashClock();
+</script>
+</body>
+</html>
