@@ -1084,7 +1084,15 @@ function buildDutiesHTML(list, allSorted) {
       <div class="duty-card ${cls}" ontouchstart="swipeStart(event,'${wrapId}')" ontouchend="swipeEnd(event,'${wrapId}')">
         <div class="dc-top">
           <div>
-            <div class="dc-date">${fmtDate(d.date)}${hasActuals?'<span style="font-size:9px;color:var(--cyan);margin-left:6px;font-weight:600">ACTUALS</span>':''}</div>
+            <div class="dc-date">
+              ${fmtDate(d.date)}
+              ${hasActuals?'<span style="font-size:9px;color:var(--cyan);margin-left:6px;font-weight:600">ACTUALS</span>':''}
+              ${(() => {
+                const eo = latestEngOff(d);
+                if (!eo) return '';
+                return `<span style="font-size:9px;color:var(--muted);margin-left:8px;letter-spacing:.2px">eng off ≤ <strong style="color:var(--text)">${eo}</strong></span>`;
+              })()}
+            </div>
             <div class="dc-route">${d.route||d.dtype||'—'}</div>
           </div>
           <span class="pctag ${cls==='ok'?'green':cls==='warn'?'amber':'red'}">${lbl}</span>
@@ -1175,6 +1183,26 @@ function clearStandbyConvert(id) {
 // ══════════════════════════════════════════════════════════
 
 let selLandings = 2;
+
+// Compute latest legal engine-off time for a duty
+// Engine off = report + maxFDP (WOCL-reduced if applicable)
+function latestEngOff(duty) {
+  if (!duty || !duty.report) return null;
+  const isStandbyD = duty.dtype && duty.dtype.startsWith('standby');
+  if (isStandbyD && !duty.convertedFlight) return null; // no flight, no engine off
+
+  const report  = duty.convertedFlight ? duty.convertedFlight.report : duty.report;
+  const land    = duty.convertedFlight ? (duty.convertedFlight.landings||1) : (duty.landings||1);
+  const night   = duty.convertedFlight ? (duty.convertedFlight.night||'no') : (duty.night||'no');
+  const crew    = duty.convertedFlight ? (duty.convertedFlight.crew||'2p') : (duty.crew||'2p');
+
+  const L = getLimits(land, night, crew);
+  // WOCL check
+  const engoffTheo = addMins(report, L.maxFDP * 60);
+  const wi = woclEncroach(report, engoffTheo);
+  const effFDP = wi.type !== 'none' ? applyWOCL(L.maxFDP, {...wi, engoffStr: engoffTheo}).effFDP : L.maxFDP;
+  return addMins(report, Math.round(effFDP * 60));
+}
 
 // §2.6.1 table — day duty max FDP / FT per landing count
 const DAY_LIMITS = {
@@ -1641,12 +1669,58 @@ function renderNextReport() {
       </div>`;
     }
 
+    // Determine what to show: standby, standby→flight, or flight
+    const isNextSB = nextDuty.dtype && nextDuty.dtype.startsWith('standby');
+    const cf = nextDuty.convertedFlight;
+    const hasCF = isNextSB && cf;
+
+    // Label & icon
+    let dutyIcon = '🕐', dutyTypeLabel = '';
+    if (isNextSB && !hasCF) {
+      dutyIcon = '⏳';
+      dutyTypeLabel = nextDuty.dtype === 'standby-apt'
+        ? '<span style="color:var(--amber);font-size:10px;font-weight:600">📍 Airport standby</span>'
+        : '<span style="color:var(--amber);font-size:10px;font-weight:600">🏠 Home/Hotel standby</span>';
+    } else if (hasCF) {
+      dutyIcon = '✈';
+      dutyTypeLabel = '<span style="color:var(--cyan);font-size:10px;font-weight:600">✈ Standby → Flight</span>';
+    }
+
+    // Route/info line
+    const mainRoute = hasCF ? (cf.route||'—') : (nextDuty.route || (isNextSB ? 'Standby' : '—'));
+    const mainReport = hasCF ? cf.report : nextDuty.report;
+
+    // FDP line for flight/converted
+    let fdpLine = '';
+    if (!isNextSB) {
+      fdpLine = `<br><span style="font-size:10px;color:var(--muted)">
+        Max FDP: <strong style="color:var(--text)">${fmtH(L.maxFDP)}</strong>
+        · Max FT: <strong>${L.maxFT}h</strong>
+        ${nextDuty.night==='yes'?'· <span style="color:var(--amber)">🌙 Night duty</span>':''}
+      </span>`;
+    } else if (hasCF) {
+      const cfL = getLimits(cf.landings||1, cf.night||'no', cf.crew||'2p');
+      fdpLine = `<br><span style="font-size:10px;color:var(--muted)">
+        Total FDP: <strong style="color:var(--cyan)">${fmtH(cf.totalFDP)}</strong>
+        · Ldg: <strong>${cf.landings}</strong>
+        · SB contrib: <strong>+${fmtH(cf.sbContrib)}</strong>
+        ${cf.night==='yes'?'· <span style="color:var(--amber)">🌙 Night</span>':''}
+      </span>`;
+    } else {
+      // Pure standby — show max standby duration
+      const maxSB = nextDuty.dtype === 'standby-apt' ? 8 : 12;
+      fdpLine = `<br><span style="font-size:10px;color:var(--muted)">
+        Max standby: <strong>${maxSB}h</strong> · §2.11.2.1
+      </span>`;
+    }
+
     el.innerHTML = `<div class="nr-box">
-      <div class="nr-label">🕐 Next duty — ${fmtDate(nextDuty.date)}</div>
-      <div class="nr-time">${nextDuty.report} · ${nextDuty.route||'—'}</div>
+      <div class="nr-label">${dutyIcon} Next duty — ${fmtDate(nextDuty.date)}</div>
+      <div style="margin-bottom:4px">${dutyTypeLabel}</div>
+      <div class="nr-time">${mainReport} · ${mainRoute}</div>
       <div class="nr-sub">
         <strong style="color:var(--amber)">⏳ ${diffH}h ${String(diffM).padStart(2,'0')}m to report</strong>
-        ${nextDuty.night==='yes'?' · <span style="color:var(--amber)">🌙 Night duty</span>':''}
+        ${fdpLine}
       </div>
       ${legalRepStr}
     </div>`;
