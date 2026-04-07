@@ -1583,11 +1583,21 @@ function renderNextReport() {
   for (let i = 0; i < sorted.length; i++) {
     const d = sorted[i];
     if (!d.report || !d.debrief) continue;
-    const repDT    = getReportDT(d);
-    const debDT    = getDebriefDT(d);  // midnight-safe
 
-    if (repDT && repDT <= now && now <= debDT) {
-      currentDuty = d; // currently in FDP
+    // Use PLANNED times for scheduling detection (not actuals).
+    // Actuals reflect what happened; planned times define the duty slot.
+    const repDT = new Date(d.date + 'T' + d.report + ':00');
+    // Planned debrief — midnight-safe using stored debriefDate or crossover detection
+    let debDT;
+    if (d.debriefDate) {
+      debDT = new Date(d.debriefDate + 'T' + d.debrief + ':00');
+    } else {
+      debDT = new Date(d.date + 'T' + d.debrief + ':00');
+      if (debDT <= repDT) debDT.setDate(debDT.getDate() + 1);
+    }
+
+    if (repDT <= now && now <= debDT) {
+      currentDuty = d; // currently in duty window
       break;
     }
     if (repDT > now) {
@@ -1693,11 +1703,10 @@ function renderNextReport() {
     // FDP line for flight/converted
     let fdpLine = '';
     if (!isNextSB) {
-      fdpLine = `<br><span style="font-size:10px;color:var(--muted)">
-        Max FDP: <strong style="color:var(--text)">${fmtH(L.maxFDP)}</strong>
-        · Max FT: <strong>${L.maxFT}h</strong>
-        ${nextDuty.night==='yes'?'· <span style="color:var(--amber)">🌙 Night duty</span>':''}
-      </span>`;
+      // Night duty note only — Max FDP/FT already shown in FDP limits table below
+      fdpLine = nextDuty.night==='yes'
+        ? `<br><span style="color:var(--amber);font-size:10px">🌙 Night duty</span>`
+        : '';
     } else if (hasCF) {
       const cfL = getLimits(cf.landings||1, cf.night||'no', cf.crew||'2p');
       fdpLine = `<br><span style="font-size:10px;color:var(--muted)">
