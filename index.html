@@ -523,7 +523,18 @@ Debriefing time: 0220"></textarea>
 <div id="page-log" class="page">
 
   <div class="pcard">
-    <div class="pchead">Log a flight duty</div>
+    <div class="pchead">Log a duty</div>
+
+    <div class="fg" style="margin-bottom:12px">
+      <label class="fl">Duty type</label>
+      <select id="l-dtype" onchange="logDtypeChange()">
+        <option value="flight">Flight duty</option>
+        <option value="standby-apt">Standby — airport</option>
+        <option value="standby-home">Standby — home/hotel</option>
+        <option value="positioning">Positioning / Deadhead</option>
+        <option value="training">Training flight</option>
+      </select>
+    </div>
 
     <div class="frow">
       <div class="fg">
@@ -585,16 +596,6 @@ Debriefing time: 0220"></textarea>
       </div>
     </div>
 
-    <div class="fg">
-      <label class="fl">Duty type</label>
-      <select id="l-dtype" onchange="logDtypeChange()">
-        <option value="flight">Flight duty</option>
-        <option value="standby-apt">Standby — airport</option>
-        <option value="standby-home">Standby — home/hotel</option>
-        <option value="positioning">Positioning / Deadhead</option>
-        <option value="training">Training flight</option>
-      </select>
-    </div>
 
     <!-- §2.10.5 travel penalty checkbox -->
     <div style="display:flex;align-items:flex-start;gap:10px;background:var(--panel2);border:1px solid var(--edge2);border-radius:8px;padding:11px 12px;margin-bottom:12px">
