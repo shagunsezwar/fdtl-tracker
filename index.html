@@ -1087,7 +1087,7 @@ function buildDutiesHTML(list, allSorted) {
               ${(() => {
                 const eo = latestEngOff(d);
                 if (!eo) return '';
-                return `<span style="font-size:9px;color:var(--muted);margin-left:8px;letter-spacing:.2px">eng off ≤ <strong style="color:var(--text)">${eo}</strong></span>`;
+                return `<span style="font-size:9px;color:var(--muted);margin-left:6px;letter-spacing:.2px">prev chocks on ≤ <strong style="color:var(--text)">${eo}</strong></span>`;
               })()}
             </div>
             <div class="dc-route">${d.route||d.dtype||'—'}</div>
@@ -1097,10 +1097,12 @@ function buildDutiesHTML(list, allSorted) {
         <div class="dc-data">
           <div class="dcd"><div class="dd-k">Report</div><div class="dd-v" style="color:var(--cyan)">${dispReport}</div></div>
           <div class="dcd"><div class="dd-k">Debrief</div><div class="dd-v">${dispDebrief}</div></div>
-          <div class="dcd"><div class="dd-k">FDP</div><div class="dd-v" style="color:${cls==='ok'?'var(--green)':cls==='warn'?'var(--amber)':'var(--red)'}">${fmtH(dispFDP)}</div></div>
+          <div class="dcd"><div class="dd-k">${isStandbyCard?'Standby':'FDP'}</div><div class="dd-v" style="color:${cls==='ok'?'var(--green)':cls==='warn'?'var(--amber)':'var(--red)'}">${fmtH(dispFDP)}</div></div>
+          ${!isStandbyCard ? `
           <div class="dcd"><div class="dd-k">Block</div><div class="dd-v">${fmtHHMM(dispBlock)}</div></div>
           <div class="dcd"><div class="dd-k">Landings</div><div class="dd-v">${d.landings||'—'}</div></div>
           <div class="dcd"><div class="dd-k">Night?</div><div class="dd-v" style="color:${d.night==='yes'?'var(--amber)':'var(--muted)'}">${d.night==='yes'?'🌙 Yes':'No'}</div></div>
+          ` : ''}
         </div>
         ${(d.issues||[]).map(x=>`<div class="dc-issue">⛔ ${x}</div>`).join('')}
         ${(d.warns||[]).map(x=>`<div class="dc-warn-msg">⚠ ${x}</div>`).join('')}
@@ -1181,24 +1183,21 @@ function clearStandbyConvert(id) {
 
 let selLandings = 2;
 
-// Compute latest legal engine-off time for a duty
-// Engine off = report + maxFDP (WOCL-reduced if applicable)
-function latestEngOff(duty) {
+// Compute latest chocks-on time from PREVIOUS duty so THIS duty's report is legal
+// Formula (back-calculate from report):
+//   report − 45min(travel to airport) − 12h(min rest §2.10.1) − 45min(travel home) − 30min(debrief)
+//   = report − 13h (780 min)
+// This tells the pilot: "previous engines off by no later than HH:MM"
+function latestChocksOn(duty) {
   if (!duty || !duty.report) return null;
-  const isStandbyD = duty.dtype && duty.dtype.startsWith('standby');
-  if (isStandbyD && !duty.convertedFlight) return null; // no flight, no engine off
+  // 45 (travel to airport) + 12×60 (min rest) + 45 (travel home) + 30 (debrief) = 780 min
+  const totalBackMins = 45 + 12*60 + 45 + 30; // = 780 min = 13h
+  return addMins(duty.report, -totalBackMins);
+}
 
-  const report  = duty.convertedFlight ? duty.convertedFlight.report : duty.report;
-  const land    = duty.convertedFlight ? (duty.convertedFlight.landings||1) : (duty.landings||1);
-  const night   = duty.convertedFlight ? (duty.convertedFlight.night||'no') : (duty.night||'no');
-  const crew    = duty.convertedFlight ? (duty.convertedFlight.crew||'2p') : (duty.crew||'2p');
-
-  const L = getLimits(land, night, crew);
-  // WOCL check
-  const engoffTheo = addMins(report, L.maxFDP * 60);
-  const wi = woclEncroach(report, engoffTheo);
-  const effFDP = wi.type !== 'none' ? applyWOCL(L.maxFDP, {...wi, engoffStr: engoffTheo}).effFDP : L.maxFDP;
-  return addMins(report, Math.round(effFDP * 60));
+// Keep old name as alias for converted-flight engine-off display
+function latestEngOff(duty) {
+  return latestChocksOn(duty);
 }
 
 // §2.6.1 table — day duty max FDP / FT per landing count
@@ -2586,7 +2585,7 @@ function openStandbyConvertModal(id) {
         <div class="fg" style="margin:0">
           <label class="fl">Route</label>
           <input type="text" id="sbc-route" placeholder="BLR-DEL"
-            oninput="this.value=this.value.toUpperCase()"
+            oninput="this.value=this.value.toUpperCase(); sbcAutoLand()"
             style="text-transform:uppercase;letter-spacing:1px">
         </div>
         <div class="fg" style="margin:0">
@@ -2670,6 +2669,14 @@ function openStandbyConvertModal(id) {
 function closeSbModal() {
   const m = document.getElementById('sb-convert-modal');
   if (m) m.remove();
+}
+
+function sbcAutoLand() {
+  const route = document.getElementById('sbc-route').value.trim();
+  const dashes = (route.match(/-/g) || []).length;
+  if (dashes >= 1 && dashes <= 6) {
+    document.getElementById('sbc-land').value = dashes;
+  }
 }
 
 function saveStandbyConvert(sbId) {
