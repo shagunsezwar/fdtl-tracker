@@ -458,11 +458,7 @@ textarea{resize:none;min-height:160px;font-size:12px;line-height:1.7}
     <div id="cum-dp"></div>
   </div>
 
-  <!-- TODAY STATS -->
-  <div class="pcard">
-    <div class="pchead">Today at a glance</div>
-    <div class="stat2" id="today-stats"></div>
-  </div>
+
 
 </div><!-- end dash -->
 
@@ -1399,7 +1395,7 @@ function buildLandingRow() {
 // Get the active report time string — from current/next duty, or null
 function getActiveDutyReportStr() {
   const now = new Date();
-  const sorted = [...duties].filter(d=>d.dtype==='flight'&&d.report).sort((a,b)=>a.date.localeCompare(b.date));
+    const sorted = [...duties].filter(d=>d.report&&d.debrief).sort((a,b)=>a.date.localeCompare(b.date));
   for (const d of sorted) {
     const repDT = getReportDT(d);
     const debDT = d.debrief ? getDebriefDT(d) : repDT;
@@ -1566,7 +1562,7 @@ function calcNextReportDT(lastDuty, travelPenalty) {
 
 function renderNextReport() {
   const el = document.getElementById('nr-box-el');
-  const sorted = [...duties].filter(d=>d.dtype==='flight').sort((a,b)=>a.date.localeCompare(b.date));
+    const sorted = [...duties].filter(d=>d.report&&d.debrief).sort((a,b)=>a.date.localeCompare(b.date));
   if (!sorted.length) {
     el.innerHTML = `<div class="nr-box" style="border-color:rgba(90,112,128,.3)">
       <div class="nr-label">📋 No duties logged</div>
@@ -1810,7 +1806,7 @@ function renderCumulative() {
 function renderRestPeriods() {
   const card = document.getElementById('rest-card');
   const el   = document.getElementById('rest-list');
-  const sorted = [...duties].filter(d=>d.dtype==='flight').sort((a,b)=>a.date.localeCompare(b.date));
+    const sorted = [...duties].filter(d=>d.report&&d.debrief).sort((a,b)=>a.date.localeCompare(b.date));
   if (sorted.length < 2) { card.style.display='none'; return; }
   card.style.display='block';
   const rows = [];
@@ -1854,7 +1850,6 @@ function renderDash() {
   renderNextReport();
   renderCumulative();
   renderRestPeriods();
-  renderTodayStats();
   buildLandingRow();
   recalcFDP();
 }
