@@ -1190,8 +1190,11 @@ let selLandings = 2;
 // This tells the pilot: "previous engines off by no later than HH:MM"
 function latestChocksOn(duty) {
   if (!duty || !duty.report) return null;
-  // 45 (travel to airport) + 12×60 (min rest) + 45 (travel home) + 30 (debrief) = 780 min
-  const totalBackMins = 45 + 12*60 + 45 + 30; // = 780 min = 13h
+  // Back-calculate from report time:
+  // report − 45min(travel to airport) − 12h(min rest §2.10.1)
+  //        − 30min(§2.10.5 penalty) − 45min(travel home) − 30min(debrief)
+  // = report − (45 + 720 + 30 + 45 + 30) = report − 870 min = report − 14h 30m
+  const totalBackMins = 45 + 12*60 + 30 + 45 + 30; // = 870 min
   return addMins(duty.report, -totalBackMins);
 }
 
@@ -1655,8 +1658,11 @@ function renderNextReport() {
       const pDebDT2   = getDebriefDT(prevDuty);
       const minR2     = Math.max(12, prevDuty.fdp || 0);
       const penMins2  = penalty2 ? 30 : 0;
-      const rStart2   = new Date(pDebDT2.getTime() + 45 * 60000);
-      const actRest2  = +((repDT - rStart2) / 3600000).toFixed(1);
+      // Rest = (repDT − 45min travel) − (prevDebrief + 45min travel)
+      // Matches Duties page formula exactly
+      const rStart2   = new Date(pDebDT2.getTime() + 45 * 60000); // rest starts
+      const rEnd2     = new Date(repDT.getTime()   - 45 * 60000); // rest ends
+      const actRest2  = +((rEnd2 - rStart2) / 3600000).toFixed(1);
       const arHH2     = Math.floor(Math.max(0, actRest2));
       const arMM2     = Math.round((Math.max(0, actRest2) - arHH2) * 60);
       const restOk2   = actRest2 >= minR2;
@@ -2448,9 +2454,8 @@ function openActualsModal(id) {
 
       <div class="fg" style="margin-bottom:14px">
         <label class="fl">Actual block hours (HH:MM)</label>
-        <input type="text" id="act-block" value="${fmtHHMM(d.actualBlock||d.block)}"
-          placeholder="03:30" maxlength="5" oninput="fmtBlockInput(this)"
-          style="font-size:16px;letter-spacing:1px">
+        <input type="time" id="act-block" value="${fmtHHMM(d.actualBlock||d.block)}"
+          style="font-size:16px;letter-spacing:1px;color:var(--text)">
       </div>
 
       <div id="act-preview" style="margin-bottom:14px;font-size:11px;color:var(--muted)">
