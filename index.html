@@ -618,13 +618,13 @@ Debriefing time: 0220"></textarea>
     <div class="slbl" style="margin:0">Duties</div>
     <button class="btn btn-ghost btn-sm" onclick="clearAll()" style="color:var(--red)">Clear all</button>
   </div>
-  <!-- Toggle for previous duties -->
+  <!-- Week-by-week previous duties toggle -->
   <div id="prev-duties-toggle" style="display:none;margin-bottom:10px">
-    <button onclick="togglePrevDuties()" id="prev-toggle-btn"
+    <button onclick="showMorePrevDuties()" id="prev-toggle-btn"
       style="width:100%;padding:11px;background:var(--amber-dim);border:1px solid rgba(245,166,35,.4);
       border-radius:9px;color:var(--amber);font-family:var(--mono);font-size:11px;
       cursor:pointer;letter-spacing:.3px;text-align:center;font-weight:600">
-      📂 Show previous duties
+      📂 Show previous duties (last 7 days)
     </button>
   </div>
   <div id="prev-duties-list"></div>
@@ -927,18 +927,35 @@ function goPage(name, btn) {
 // ── Full duties page — shows upcoming/active, hides completed ──
 let _showPrev = false;
 
-function togglePrevDuties() {
-  _showPrev = !_showPrev;
-  const btn      = document.getElementById('prev-toggle-btn');
+// Week-paginated previous duties
+let _prevWeeksShown = 0;
+
+function showMorePrevDuties() {
+  _prevWeeksShown++;
+  const btn = document.getElementById('prev-toggle-btn');
   const prevList = document.getElementById('prev-duties-list');
-  if (_showPrev) {
-    prevList.classList.add('slide-open');
-    btn.textContent = '📂 Hide previous duties';
+  const now = new Date();
+  const cutoff = new Date(now);
+  cutoff.setDate(cutoff.getDate() - (_prevWeeksShown * 7));
+  const allSorted = [...duties].sort((a,b)=>a.date.localeCompare(b.date));
+  const allPrev = allSorted.filter(d => { const dt = getDebriefDT(d); return dt && dt < now; });
+  const visible = allPrev.filter(d => new Date(d.date) >= cutoff);
+  const hasMore = allPrev.some(d => new Date(d.date) < cutoff);
+  prevList.innerHTML = buildDutiesHTML(visible, allSorted);
+  prevList.classList.add('slide-open');
+  _showPrev = true;
+  if (hasMore) {
+    btn.textContent = `📂 ${_prevWeeksShown * 7} days shown — load 7 more`;
+    btn.style.opacity = '1';
+    btn.onclick = showMorePrevDuties;
   } else {
-    prevList.classList.remove('slide-open');
-    btn.textContent = '📂 Show previous duties';
+    btn.textContent = `📂 All ${allPrev.length} previous duties shown`;
+    btn.style.opacity = '0.6';
+    btn.onclick = null;
   }
 }
+
+function togglePrevDuties() { showMorePrevDuties(); }
 
 function renderDutiesFull() {
   const el       = document.getElementById('duties-full-list');
@@ -978,7 +995,14 @@ function renderDutiesFull() {
   } else if (prevDuties.length && upcomingDuties.length) {
     // Mix of past and upcoming — show toggle so user can access prev
     toggleEl.style.display = 'block';
-    if (_showPrev) prevEl.classList.add('slide-open'); else prevEl.classList.remove('slide-open');
+    _prevWeeksShown = 0; // reset week counter when re-rendering
+    const btn2 = document.getElementById('prev-toggle-btn');
+    if (btn2) {
+      btn2.textContent = '📂 Show previous duties (last 7 days)';
+      btn2.style.opacity = '1';
+      btn2.onclick = showMorePrevDuties;
+    }
+    if (_showPrev) { showMorePrevDuties(); } else { prevEl.classList.remove('slide-open'); }
   } else {
     // No completed duties yet
     toggleEl.style.display = 'none';
