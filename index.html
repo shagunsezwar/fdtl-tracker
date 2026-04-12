@@ -525,10 +525,10 @@ Debriefing time: 0220"></textarea>
       <label class="fl">Duty type</label>
       <select id="l-dtype" onchange="logDtypeChange()">
         <option value="flight">Flight duty</option>
-        <option value="standby-apt">Standby — airport</option>
+        <option value="flight-deadhead">Flight duty + Deadhead</option>
+        <option value="positioning">Positioning / Deadhead only</option>
         <option value="standby-home">Standby — home/hotel</option>
-        <option value="positioning">Positioning / Deadhead</option>
-        <option value="training">Training flight</option>
+        <option value="standby-apt">Standby — airport</option>
       </select>
     </div>
 
@@ -905,7 +905,7 @@ let duties = load();
 
 function filterDays(n) {
   const cut=new Date(); cut.setDate(cut.getDate()-n); cut.setHours(0,0,0,0);
-  return duties.filter(d=>d.dtype==='flight'&&new Date(d.date)>=cut);
+  return duties.filter(d=>(d.dtype==='flight'||d.dtype==='flight-deadhead')&&new Date(d.date)>=cut);
 }
 const sumFT = ds => +ds.reduce((s,d)=>s+(d.block||0),0).toFixed(1);
 const sumDP = ds => +ds.reduce((s,d)=>s+(d.fdp||0),0).toFixed(1);
@@ -1114,7 +1114,7 @@ function buildDutiesHTML(list, allSorted) {
                 return `<span style="font-size:9px;color:var(--muted);margin-left:6px;letter-spacing:.2px">prev chocks on ≤ <strong style="color:var(--text)">${eo}</strong></span>`;
               })()}
             </div>
-            <div class="dc-route">${d.route||d.dtype||'—'}</div>
+            <div class="dc-route">${d.route||(d.dtype==='flight-deadhead'?'Flight + Deadhead':d.dtype)||'—'}</div>
           </div>
           <span class="pctag ${cls==='ok'?'green':cls==='warn'?'amber':'red'}">${lbl}</span>
         </div>
@@ -1686,7 +1686,7 @@ function renderNextReport() {
       // Matches Duties page formula exactly
       const rStart2   = new Date(pDebDT2.getTime() + 45 * 60000); // rest starts
       const rEnd2     = new Date(repDT.getTime()   - 45 * 60000); // rest ends
-      const actRest2  = +((rEnd2 - rStart2) / 3600000).toFixed(1);
+      const actRest2  = +((rEnd2 - rStart2) / 3600000).toFixed(2);
       const arHH2     = Math.floor(Math.max(0, actRest2));
       const arMM2     = Math.round((Math.max(0, actRest2) - arHH2) * 60);
       const restOk2   = actRest2 >= minR2;
@@ -2259,7 +2259,7 @@ Save anyway?`
     if (dutyPeriod > maxSB) issues.push(`Standby ${fmtH(dutyPeriod)} > max ${maxSB}h (§2.11.2.1)`);
     else if (dutyPeriod > maxSB * 0.9) warns.push(`Standby approaching ${maxSB}h limit (§2.11.2.1)`);
     // Note: cumulative duty contribution calculated when converting to flight via Duties page
-  } else if (dtype==='flight'||dtype==='training') {
+  } else if (dtype==='flight'||dtype==='flight-deadhead') {
     if (fdp > L.maxFDP) issues.push(`FDP ${fmtH(fdp)} > max ${fmtH(L.maxFDP)} (§2.6.1)`);
     else if (fdp > L.maxFDP*.9) warns.push(`FDP within 10% of max`);
     if (block > L.maxFT) issues.push(`Block ${block}h > max FT ${L.maxFT}h`);
