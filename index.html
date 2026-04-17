@@ -418,9 +418,13 @@ textarea{resize:none;min-height:160px;font-size:12px;line-height:1.7}
     <div>
       <div class="tb-title">FDTL Monitor</div>
       <div class="tb-sub">IndiGo · OMA Ch.2 · TR13/2026</div>
+      <div class="tb-sub" style="color:var(--cyan);opacity:.7;margin-top:2px;letter-spacing:.6px">All times in IST</div>
     </div>
   </div>
-  <div class="live-clock" id="live-clock">--:--</div>
+  <div style="text-align:right">
+    <div class="live-clock" id="live-clock">--:--</div>
+    <div id="live-clock-ist" style="font-family:var(--mono);font-size:10px;color:var(--amber);letter-spacing:1px;font-weight:500;margin-top:2px">--:-- IST</div>
+  </div>
 </div>
 
 <div id="scroller">
@@ -614,9 +618,19 @@ Debriefing time: 0220"></textarea>
      PAGE 4 — DUTIES (all logged duties)
 ═══════════════════════════════════ -->
 <div id="page-duties-full" class="page">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
     <div class="slbl" style="margin:0">Duties</div>
     <button class="btn btn-ghost btn-sm" onclick="clearAll()" style="color:var(--red)">Clear all</button>
+  </div>
+
+  <!-- Month filter -->
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;background:var(--panel2);border:1px solid var(--edge2);border-radius:9px;padding:9px 12px">
+    <span style="font-size:10px;color:var(--muted);letter-spacing:.6px;text-transform:uppercase;flex-shrink:0">Filter month</span>
+    <select id="duties-month-filter" onchange="renderDutiesFull()"
+      style="flex:1;background:var(--panel3);border:1px solid var(--edge2);border-radius:6px;
+             color:var(--text);font-family:var(--mono);font-size:12px;padding:5px 8px;cursor:pointer">
+      <option value="">All duties</option>
+    </select>
   </div>
   <!-- Week-by-week previous duties toggle -->
   <div id="prev-duties-toggle" style="display:none;margin-bottom:10px">
@@ -888,12 +902,42 @@ function fmtH(h) {
 }
 
 // Format date string
+const _MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function fmtDate(s) {
-  try { return new Date(s+'T12:00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short',weekday:'short'}); }
-  catch { return s; }
+  try {
+    const dt = new Date(s+'T12:00:00Z');
+    const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    return days[dt.getUTCDay()] + ', ' + String(dt.getUTCDate()).padStart(2,'0') + ' ' + _MONTHS[dt.getUTCMonth()];
+  } catch { return s; }
 }
 
-function today() { return new Date().toISOString().slice(0,10); }
+// ── IST-anchored "now" — always UTC+5:30, immune to device timezone ──
+function nowIST() {
+  const ms = Date.now() + (5*60+30)*60000;
+  return new Date(ms);          // treat .getUTC*() as IST hours/mins/date
+}
+// Format an IST-epoch Date as HH:MM (always UTC methods = IST)
+function fmtISTtime(dt) {
+  return String(dt.getUTCHours()).padStart(2,'0') + ':' + String(dt.getUTCMinutes()).padStart(2,'0');
+}
+// Format an IST-epoch Date as "DD MMM" (e.g. "09 Apr")
+function fmtISTdate(dt) {
+  return String(dt.getUTCDate()).padStart(2,'0') + ' ' + _MONTHS[dt.getUTCMonth()];
+}
+// Format as "HH:MM DD MMM"
+function fmtISTdatetime(dt) { return fmtISTtime(dt) + ' ' + fmtISTdate(dt); }
+function istDT(dateStr, timeStr) {
+  // dateStr = "YYYY-MM-DD", timeStr = "HH:MM"
+  // Return a plain JS Date whose UTC value equals that IST moment
+  const [y,mo,d] = dateStr.split('-').map(Number);
+  const [h,m]    = timeStr.split(':').map(Number);
+  // IST = UTC+5:30 → UTC = IST - 5:30
+  return new Date(Date.UTC(y, mo-1, d, h, m) - (5*60+30)*60000);
+}
+function today() {
+  const n = nowIST();
+  return `${n.getUTCFullYear()}-${String(n.getUTCMonth()+1).padStart(2,'0')}-${String(n.getUTCDate()).padStart(2,'0')}`;
+}
 
 function bClass(pct) { return pct>=1?'red':pct>=.85?'amber':'green'; }
 function bColor(pct) { return pct>=1?'var(--red)':pct>=.85?'var(--amber)':'var(--green)'; }
@@ -904,8 +948,10 @@ function persist(d) { localStorage.setItem('fdtl3', JSON.stringify(d)); }
 let duties = load();
 
 function filterDays(n) {
-  const cut=new Date(); cut.setDate(cut.getDate()-n); cut.setHours(0,0,0,0);
-  return duties.filter(d=>(d.dtype==='flight'||d.dtype==='flight-deadhead')&&new Date(d.date)>=cut);
+  const ist = nowIST();
+  // midnight IST n days ago — as UTC epoch
+  const cut = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()) - n*86400000;
+  return duties.filter(d=>(d.dtype==='flight'||d.dtype==='flight-deadhead') && new Date(d.date+'T00:00:00Z').getTime() >= cut);
 }
 const sumFT = ds => +ds.reduce((s,d)=>s+(d.block||0),0).toFixed(1);
 const sumDP = ds => +ds.reduce((s,d)=>s+(d.fdp||0),0).toFixed(1);
@@ -934,13 +980,18 @@ function showMorePrevDuties() {
   _prevWeeksShown++;
   const btn = document.getElementById('prev-toggle-btn');
   const prevList = document.getElementById('prev-duties-list');
-  const now = new Date();
-  const cutoff = new Date(now);
-  cutoff.setDate(cutoff.getDate() - (_prevWeeksShown * 7));
+  const now = nowIST();
+  const weeksMs = _prevWeeksShown * 7 * 86400000;
+  const cutEpoch = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - weeksMs;
   const allSorted = [...duties].sort((a,b)=>a.date.localeCompare(b.date));
-  const allPrev = allSorted.filter(d => { const dt = getDebriefDT(d); return dt && dt < now; });
-  const visible = allPrev.filter(d => new Date(d.date) >= cutoff);
-  const hasMore = allPrev.some(d => new Date(d.date) < cutoff);
+
+  // Respect active month filter
+  const activeMonth = document.getElementById('duties-month-filter').value;
+  const monthFiltered = activeMonth ? allSorted.filter(d=>d.date.slice(0,7)===activeMonth) : allSorted;
+
+  const allPrev = monthFiltered.filter(d => { const dt = getDebriefDT(d); return dt && dt < now; });
+  const visible = allPrev.filter(d => new Date(d.date+'T00:00:00Z').getTime() >= cutEpoch);
+  const hasMore = allPrev.some(d => new Date(d.date+'T00:00:00Z').getTime() < cutEpoch);
   prevList.innerHTML = buildDutiesHTML(visible, allSorted);
   prevList.classList.add('slide-open');
   _showPrev = true;
@@ -961,14 +1012,35 @@ function renderDutiesFull() {
   const el       = document.getElementById('duties-full-list');
   const prevEl   = document.getElementById('prev-duties-list');
   const toggleEl = document.getElementById('prev-duties-toggle');
+  const mSel     = document.getElementById('duties-month-filter');
+
+  // ── Populate month dropdown from all duties ──
+  const allMonths = [...new Set(duties.map(d=>d.date.slice(0,7)))].sort();
+  const curSel = mSel.value;
+  mSel.innerHTML = '<option value="">All duties</option>';
+  for (const m of allMonths) {
+    const [y,mo] = m.split('-');
+    const label = _MONTHS[+mo-1] + ' ' + y;
+    const opt = document.createElement('option');
+    opt.value = m; opt.textContent = label;
+    if (m === curSel) opt.selected = true;
+    mSel.appendChild(opt);
+  }
+  // If currently viewing a specific month, keep it selected
+  const activeMonth = mSel.value;
 
   if (!duties.length) {
     el.innerHTML='<div class="empty"><div class="empty-icon">🗂</div><div class="empty-text">No duties logged yet.<br>Use the Log page or import from Roster.</div></div>';
     prevEl.innerHTML=''; toggleEl.style.display='none'; return;
   }
 
-  const now = new Date();
-  const sorted = [...duties].sort((a,b)=>a.date.localeCompare(b.date));
+  const now = nowIST();
+  let sorted = [...duties].sort((a,b)=>a.date.localeCompare(b.date));
+
+  // ── Apply month filter ──
+  if (activeMonth) {
+    sorted = sorted.filter(d => d.date.slice(0,7) === activeMonth);
+  }
 
   // Split duties: completed (debrief in past) vs upcoming/active
   const prevDuties = [];
@@ -982,9 +1054,10 @@ function renderDutiesFull() {
     }
   }
 
-  // Render HTML for both sections
-  prevEl.innerHTML = buildDutiesHTML(prevDuties, sorted);
-  el.innerHTML     = buildDutiesHTML(upcomingDuties, sorted);
+  // Render HTML for both sections — pass allSorted as context so rest
+  // calculations can see duties outside the filtered month
+  prevEl.innerHTML = buildDutiesHTML(prevDuties, allSorted);
+  el.innerHTML     = buildDutiesHTML(upcomingDuties, allSorted);
 
   if (prevDuties.length && !upcomingDuties.length) {
     // ALL duties are completed — auto-show them, no need to toggle
@@ -1064,8 +1137,7 @@ function buildDutiesHTML(list, allSorted) {
       const pDebDT2 = getDebriefDT(prev);
       const rStart  = new Date(pDebDT2.getTime() + 45*60000);
       const rEnd    = new Date(repDT.getTime()   - 45*60000);  // fix: use repDT not cRepDT
-      const fmt2    = dt => dt.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false})
-                          + ' ' + dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+      const fmt2    = dt => fmtISTdatetime(dt);
       const elStr   = earliestLegalDT ? fmt2(earliestLegalDT) : '—';
 
       html += `<div style="
@@ -1420,7 +1492,7 @@ function buildLandingRow() {
 
 // Get the active report time string — from current/next duty, or null
 function getActiveDutyReportStr() {
-  const now = new Date();
+  const now = nowIST();
     const sorted = [...duties].filter(d=>d.report&&d.debrief).sort((a,b)=>a.date.localeCompare(b.date));
   for (const d of sorted) {
     const repDT = getReportDT(d);
@@ -1459,13 +1531,12 @@ function recalcFDP() {
   let expiryStr = '—', remainStr = '—', statusClass = 'ok';
   if (rptStr) {
     expiryStr = addMins(rptStr, displayFDP*60);
-    const now = new Date();
+    const now = nowIST();
     const [rh,rm] = rptStr.split(':').map(Number);
     // Build report datetime — use today or tomorrow if report is past midnight
-    let rptDate = new Date(now);
-    rptDate.setHours(rh, rm, 0, 0);
+    let rptDate = istDT(today(), rptStr);
     if (activeDuty && activeDuty.date) {
-      rptDate = new Date(activeDuty.date + 'T' + rptStr + ':00');
+      rptDate = istDT(activeDuty.date, rptStr);
     }
     const expDT = new Date(rptDate.getTime() + displayFDP*3600000);
     const remainMs = expDT - now;
@@ -1550,20 +1621,20 @@ function getDebriefDT(duty) {
   if (!debTime) return null;
   const debDate = duty.actualDebriefDate || duty.debriefDate;
   if (debDate) {
-    return new Date(debDate + 'T' + debTime + ':00');
+    return istDT(debDate, debTime);
   }
   // Legacy: midnight crossover detection
   const repTime = duty.actualReport || duty.report || '00:00';
-  const repDT = new Date(duty.date + 'T' + repTime + ':00');
-  const debDT = new Date(duty.date + 'T' + debTime + ':00');
-  if (debDT <= repDT) debDT.setDate(debDT.getDate() + 1);
+  const repDT = istDT(duty.date, repTime);
+  let debDT = istDT(duty.date, debTime);
+  if (debDT <= repDT) debDT = new Date(debDT.getTime() + 86400000);
   return debDT;
 }
 
 function getReportDT(duty) {
   if (!duty || !(duty.actualReport || duty.report)) return null;
   const repTime = duty.actualReport || duty.report;
-  return new Date(duty.date + 'T' + repTime + ':00');
+  return istDT(duty.date, repTime);
 }
 
 
@@ -1597,7 +1668,7 @@ function renderNextReport() {
     return;
   }
 
-  const now = new Date();
+  const now = nowIST();
   const travelPenalty = false; // default — user sets this per-duty on log
 
   // Find the NEXT upcoming duty (report time in future) or current live duty
@@ -1609,14 +1680,14 @@ function renderNextReport() {
 
     // Use PLANNED times for scheduling detection (not actuals).
     // Actuals reflect what happened; planned times define the duty slot.
-    const repDT = new Date(d.date + 'T' + d.report + ':00');
+    const repDT = istDT(d.date, d.report);
     // Planned debrief — midnight-safe using stored debriefDate or crossover detection
     let debDT;
     if (d.debriefDate) {
-      debDT = new Date(d.debriefDate + 'T' + d.debrief + ':00');
+      debDT = istDT(d.debriefDate, d.debrief);
     } else {
-      debDT = new Date(d.date + 'T' + d.debrief + ':00');
-      if (debDT <= repDT) debDT.setDate(debDT.getDate() + 1);
+      debDT = istDT(d.date, d.debrief);
+      if (debDT <= repDT) debDT = new Date(debDT.getTime() + 86400000);
     }
 
     if (repDT <= now && now <= debDT) {
@@ -1666,7 +1737,7 @@ function renderNextReport() {
 
   // ── CASE 2: Next duty coming up ──
   if (nextDuty) {
-    const repDT = new Date(nextDuty.date+'T'+nextDuty.report+':00');
+    const repDT = istDT(nextDuty.date, nextDuty.report);
     const diffMs = repDT - now;
     const diffH  = Math.floor(diffMs/3600000);
     const diffM  = Math.floor((diffMs%3600000)/60000);
@@ -1692,8 +1763,7 @@ function renderNextReport() {
       const restOk2   = actRest2 >= minR2;
       const legalDT2  = new Date(pDebDT2.getTime() + (45 + minR2*60 + penMins2 + 45)*60000);
       const legalOk2  = repDT >= legalDT2;
-      const lStr2     = legalDT2.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false})
-                        + ' · ' + legalDT2.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+      const lStr2     = fmtISTtime(legalDT2) + ' · ' + fmtISTdate(legalDT2);
       legalRepStr = `<div style="margin-top:8px;padding:8px 10px;background:${(restOk2&&legalOk2)?'var(--green-dim)':'var(--red-dim)'};border-radius:7px;border:1px solid ${(restOk2&&legalOk2)?'rgba(0,230,118,.25)':'rgba(255,77,77,.25)'}">
         <div style="font-size:11px;font-weight:700;color:${(restOk2&&legalOk2)?'var(--green)':'var(--red)'}">
           ${(restOk2&&legalOk2)?'✓ Rest compliant':'⛔ '+(restOk2?'Reported before legal time':'Rest below minimum')}
@@ -1781,15 +1851,12 @@ function renderNextReport() {
   const debriefDT = getDebriefDT(last);
 
   // Show breakdown: debrief → rest start → rest end → next report
-  const debTimeStr = debriefDT.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false})
-                   + ' ' + debriefDT.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
-  const restStartDT3 = new Date(debriefDT.getTime() + 45*60000);
-  const restEndDT3   = new Date(debriefDT.getTime() + (45 + minR*60)*60000);
-  const restStartStr = restStartDT3.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false});
-  const restEndStr   = restEndDT3.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false})
-                     + ' ' + restEndDT3.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
-  const nextRepStr   = nextRepDT.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false})
-                     + ' · ' + nextRepDT.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+  const debTimeStr    = fmtISTdatetime(debriefDT);
+  const restStartDT3  = new Date(debriefDT.getTime() + 45*60000);
+  const restEndDT3    = new Date(debriefDT.getTime() + (45 + minR*60)*60000);
+  const restStartStr  = fmtISTtime(restStartDT3);
+  const restEndStr    = fmtISTdatetime(restEndDT3);
+  const nextRepStr    = fmtISTtime(nextRepDT) + ' · ' + fmtISTdate(nextRepDT);
   el.innerHTML=`<div class="nr-box" style="${isLegal?'border-color:rgba(0,230,118,.35)':''}">
     <div class="nr-label">🕐 Earliest legal reporting time</div>
     <div class="nr-time">${nextRepStr}</div>
@@ -1842,9 +1909,9 @@ function renderRestPeriods() {
   for (let i=1; i<sorted.length; i++) {
     const prev=sorted[i-1], curr=sorted[i];
     if (!prev.debrief || !curr.report) continue;
-    const prevEnd = new Date(prev.date+'T'+prev.debrief+':00');
-    const currStart = new Date(curr.date+'T'+curr.report+':00');
-    if (currStart <= prevEnd) currStart.setDate(currStart.getDate()+1);
+    const prevEnd = istDT(prev.debriefDate || prev.date, prev.actualDebrief || prev.debrief);
+    let currStart = istDT(curr.date, curr.actualReport || curr.report);
+    if (currStart <= prevEnd) currStart = new Date(currStart.getTime() + 86400000);
     const restH = +((currStart-prevEnd)/3600000).toFixed(1);
     const minR  = Math.max(12, prev.fdp||0);
     const ok    = restH >= minR;
@@ -1906,8 +1973,8 @@ function parseRoster() {
 
   if (!raw) { alert('Please paste your roster text first.'); return; }
 
-  const year = month ? month.slice(0,4) : String(new Date().getFullYear());
-  const mon  = month ? month.slice(5,7) : String(new Date().getMonth()+1).padStart(2,'0');
+  const year = month ? month.slice(0,4) : String(nowIST().getUTCFullYear());
+  const mon  = month ? month.slice(5,7) : String(nowIST().getUTCMonth()+1).padStart(2,'0');
   const lines = raw.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
 
   const isSkip = l => SKIP_WORDS.some(w=>l.toUpperCase().includes(w));
@@ -2214,15 +2281,18 @@ function logFlight() {
 
   // ── Overlap check ──
   // Build the new duty's window: report → debrief (midnight-safe)
-  const newRepDT = new Date(date + 'T' + report + ':00');
+  const newRepDT = istDT(date, report);
   const [rH0,rM0] = report.split(':').map(Number);
   const [dH0,dM0] = debrief.split(':').map(Number);
   let newDebDate = date;
   if ((dH0*60+dM0) <= (rH0*60+rM0)) {
-    const d0 = new Date(date+'T12:00:00'); d0.setDate(d0.getDate()+1);
-    newDebDate = d0.toISOString().slice(0,10);
+    // crosses midnight — advance date by 1 in IST
+    const d0ep = new Date(date+'T00:00:00Z').getTime() + (5*60+30)*60000 + 86400000;
+    const d0   = new Date(d0ep - (5*60+30)*60000); // back to UTC epoch for IST date
+    newDebDate  = new Date(date+'T00:00:00Z').getTime() + 86400000;
+    newDebDate  = new Date(newDebDate).toISOString().slice(0,10);
   }
-  const newDebDT = new Date(newDebDate + 'T' + debrief + ':00');
+  const newDebDT = istDT(newDebDate, debrief);
 
   const overlaps = duties.filter(ex => {
     if (!ex.report || !ex.debrief) return false;
@@ -2277,10 +2347,8 @@ Save anyway?`
   const dMins = dH * 60 + dM;
   let debriefDate = date; // same day by default
   if (dMins <= rMins) {
-    // Crosses midnight — debrief is next calendar day
-    const d2 = new Date(date + 'T12:00:00');
-    d2.setDate(d2.getDate() + 1);
-    debriefDate = d2.toISOString().slice(0, 10);
+    // Crosses midnight — debrief is next IST calendar day
+    debriefDate = new Date(new Date(date+'T00:00:00Z').getTime() + 86400000).toISOString().slice(0,10);
   }
 
   const d={id:Date.now(),date,debriefDate,route,report,debrief,engoff,block,landings:land,night,crew,dtype,fdp,status,issues,warns,rosterType:'manual',travelPenalty};
@@ -2374,7 +2442,7 @@ function renderDuties() {
         const _pen=restPenalty?30:0;
         const _pDebDT=getDebriefDT(duties[idx-1]);
         const _elDT=new Date(_pDebDT.getTime()+(45+_minR*60+_pen+45)*60000);
-        const _elStr=_elDT.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false})+' '+_elDT.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+        const _elStr=fmtISTdatetime(_elDT);
         const _legalOk=getReportDT(d)>=_elDT;
         return \`<div class="dc-rest-bar \${(restOk&&_legalOk)?'ok':'bad'}">
           Rest: <strong style="color:\${restOk?'var(--green)':'var(--red)'}">\${_rHH}h \${String(_rMM).padStart(2,'0')}m</strong> / min \${fmtH(_minR)}
@@ -2539,9 +2607,7 @@ function saveActuals(id) {
     const [rH2,rM2] = actualReport.split(':').map(Number);
     const [dH2,dM2] = actualDebrief.split(':').map(Number);
     if ((dH2*60+dM2) <= (rH2*60+rM2)) {
-      const d2 = new Date(duties[idx].date + 'T12:00:00');
-      d2.setDate(d2.getDate() + 1);
-      actualDebriefDate = d2.toISOString().slice(0,10);
+      actualDebriefDate = new Date(new Date(duties[idx].date+'T00:00:00Z').getTime() + 86400000).toISOString().slice(0,10);
     }
   }
 
@@ -2745,9 +2811,7 @@ function saveStandbyConvert(sbId) {
   const [dH,dM] = debrief.split(':').map(Number);
   let debriefDate = sb.date;
   if ((dH*60+dM) <= (rH*60+rM)) {
-    const d2 = new Date(sb.date+'T12:00:00');
-    d2.setDate(d2.getDate()+1);
-    debriefDate = d2.toISOString().slice(0,10);
+    debriefDate = new Date(new Date(sb.date+'T00:00:00Z').getTime() + 86400000).toISOString().slice(0,10);
   }
 
   // FDTL check on total effective FDP
@@ -2781,11 +2845,19 @@ function saveStandbyConvert(sbId) {
 //  LIVE CLOCK
 // ══════════════════════════════════════════════════════════
 function tickClock() {
-  const now=new Date();
-  const h=String(now.getUTCHours()).padStart(2,'0');
-  const m=String(now.getUTCMinutes()).padStart(2,'0');
-  const s=String(now.getUTCSeconds()).padStart(2,'0');
-  document.getElementById('live-clock').textContent=`${h}:${m}:${s}Z`;
+  const now = nowIST();
+  // UTC clock
+  const uh = String(now.getUTCHours()).padStart(2,'0');
+  const um = String(now.getUTCMinutes()).padStart(2,'0');
+  const us = String(now.getUTCSeconds()).padStart(2,'0');
+  document.getElementById('live-clock').textContent = `${uh}:${um}:${us}Z`;
+  // IST clock — always UTC+5:30, never uses device timezone
+  const istMs = now.getTime() + (5*60 + 30)*60000;
+  const ist   = new Date(istMs);
+  const ih    = String(ist.getUTCHours()).padStart(2,'0');
+  const im    = String(ist.getUTCMinutes()).padStart(2,'0');
+  const is_   = String(ist.getUTCSeconds()).padStart(2,'0');
+  document.getElementById('live-clock-ist').textContent = `${ih}:${im}:${is_} IST`;
 }
 
 // ══════════════════════════════════════════════════════════
@@ -2801,8 +2873,8 @@ if ('serviceWorker' in navigator) {
 //  INIT
 // ══════════════════════════════════════════════════════════
 document.getElementById('l-date').value = today();
-const nm=new Date();
-document.getElementById('paste-month').value=`${nm.getFullYear()}-${String(nm.getMonth()+1).padStart(2,'0')}`;
+const nm=nowIST();
+document.getElementById('paste-month').value=`${nm.getUTCFullYear()}-${String(nm.getUTCMonth()+1).padStart(2,'0')}`;
 tickClock();
 _clockTimer = setInterval(tickClock, 1000);
 renderDash();
