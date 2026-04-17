@@ -1014,6 +1014,9 @@ function renderDutiesFull() {
   const toggleEl = document.getElementById('prev-duties-toggle');
   const mSel     = document.getElementById('duties-month-filter');
 
+  // ── allSorted = full unfiltered list for rest context ──
+  const allSorted = [...duties].sort((a,b)=>a.date.localeCompare(b.date));
+
   // ── Populate month dropdown from all duties ──
   const allMonths = [...new Set(duties.map(d=>d.date.slice(0,7)))].sort();
   const curSel = mSel.value;
@@ -1026,7 +1029,6 @@ function renderDutiesFull() {
     if (m === curSel) opt.selected = true;
     mSel.appendChild(opt);
   }
-  // If currently viewing a specific month, keep it selected
   const activeMonth = mSel.value;
 
   if (!duties.length) {
@@ -1035,50 +1037,44 @@ function renderDutiesFull() {
   }
 
   const now = nowIST();
-  let sorted = [...duties].sort((a,b)=>a.date.localeCompare(b.date));
+  let sorted = activeMonth
+    ? allSorted.filter(d => d.date.slice(0,7) === activeMonth)
+    : allSorted;
 
-  // ── Apply month filter ──
-  if (activeMonth) {
-    sorted = sorted.filter(d => d.date.slice(0,7) === activeMonth);
-  }
-
-  // Split duties: completed (debrief in past) vs upcoming/active
-  const prevDuties = [];
+  // Split: completed (debrief in past) vs upcoming/active
+  const prevDuties     = [];
   const upcomingDuties = [];
   for (const d of sorted) {
     const debDT = getDebriefDT(d);
-    if (debDT && debDT < now) {
-      prevDuties.push(d);
-    } else {
-      upcomingDuties.push(d);
-    }
+    if (debDT && debDT < now) prevDuties.push(d);
+    else upcomingDuties.push(d);
   }
 
-  // Render HTML for both sections — pass allSorted as context so rest
-  // calculations can see duties outside the filtered month
-  prevEl.innerHTML = buildDutiesHTML(prevDuties, allSorted);
-  el.innerHTML     = buildDutiesHTML(upcomingDuties, allSorted);
+  // Render upcoming into main list
+  el.innerHTML = buildDutiesHTML(upcomingDuties, allSorted);
 
-  if (prevDuties.length && !upcomingDuties.length) {
-    // ALL duties are completed — auto-show them, no need to toggle
+  if (!prevDuties.length) {
+    // No completed duties
+    prevEl.innerHTML = '';
     toggleEl.style.display = 'none';
+  } else if (!upcomingDuties.length) {
+    // Only completed duties — show them all directly, no toggle needed
+    prevEl.innerHTML = buildDutiesHTML(prevDuties, allSorted);
     prevEl.classList.add('slide-open');
-    _showPrev = true;
-    el.innerHTML = '';
-  } else if (prevDuties.length && upcomingDuties.length) {
-    // Mix of past and upcoming — show toggle so user can access prev
+    toggleEl.style.display = 'none';
+  } else {
+    // Mix — show toggle for previous duties
+    prevEl.innerHTML = buildDutiesHTML(prevDuties, allSorted);
     toggleEl.style.display = 'block';
-    _prevWeeksShown = 0; // reset week counter when re-rendering
+    _prevWeeksShown = 0;
     const btn2 = document.getElementById('prev-toggle-btn');
     if (btn2) {
       btn2.textContent = '📂 Show previous duties (last 7 days)';
       btn2.style.opacity = '1';
       btn2.onclick = showMorePrevDuties;
     }
-    if (_showPrev) { showMorePrevDuties(); } else { prevEl.classList.remove('slide-open'); }
-  } else {
-    // No completed duties yet
-    toggleEl.style.display = 'none';
+    if (_showPrev) prevEl.classList.add('slide-open');
+    else prevEl.classList.remove('slide-open');
   }
 }
 
@@ -2846,14 +2842,14 @@ function saveStandbyConvert(sbId) {
 //  LIVE CLOCK
 // ══════════════════════════════════════════════════════════
 function tickClock() {
-  const now = nowIST();
-  // UTC clock
+  const now = new Date();          // real wall-clock time
+  // UTC clock — raw UTC
   const uh = String(now.getUTCHours()).padStart(2,'0');
   const um = String(now.getUTCMinutes()).padStart(2,'0');
   const us = String(now.getUTCSeconds()).padStart(2,'0');
   document.getElementById('live-clock').textContent = `${uh}:${um}:${us}Z`;
-  // IST clock — always UTC+5:30, never uses device timezone
-  const istMs = now.getTime() + (5*60 + 30)*60000;
+  // IST clock — always UTC+5:30, ignores device timezone
+  const istMs = now.getTime() + (5*60+30)*60000;
   const ist   = new Date(istMs);
   const ih    = String(ist.getUTCHours()).padStart(2,'0');
   const im    = String(ist.getUTCMinutes()).padStart(2,'0');
