@@ -597,15 +597,10 @@ Debriefing time: 0220"></textarea>
     </div>
 
 
-    <!-- §2.10.5 travel penalty checkbox -->
-    <div style="display:flex;align-items:flex-start;gap:10px;background:var(--panel2);border:1px solid var(--edge2);border-radius:8px;padding:11px 12px;margin-bottom:12px">
-      <div style="flex-shrink:0;margin-top:1px">
-        <input type="checkbox" id="l-travel-penalty" checked style="width:18px;height:18px;accent-color:var(--amber);cursor:pointer;background:var(--panel2);border:1px solid var(--edge2);border-radius:3px">
-      </div>
-      <div>
-        <div style="font-size:12px;font-weight:600;color:var(--amber);margin-bottom:2px">+30 min rest penalty (§2.10.5)</div>
-        <div style="font-size:10px;color:var(--muted);line-height:1.5">Check if transport to/from airport exceeded 30 minutes. Adds 30 min to minimum rest requirement.</div>
-      </div>
+    <!-- §2.10.5 travel penalty checkbox — hidden label, logic kept -->
+    <div style="display:flex;align-items:center;gap:10px;background:var(--panel2);border:1px solid var(--edge2);border-radius:8px;padding:11px 12px;margin-bottom:12px">
+      <input type="checkbox" id="l-travel-penalty" checked style="width:18px;height:18px;accent-color:var(--amber);cursor:pointer">
+      <span style="font-size:12px;color:var(--muted)">Travel &gt; 30 min to/from airport</span>
     </div>
     <button class="btn btn-cyan" onclick="logFlight()">+ Log duty</button>
   </div>
@@ -980,16 +975,17 @@ function showMorePrevDuties() {
   _prevWeeksShown++;
   const btn = document.getElementById('prev-toggle-btn');
   const prevList = document.getElementById('prev-duties-list');
-  const now = nowIST();
+  const nowReal = new Date();   // real epoch — for comparing with istDT() results
+  const nowIst  = nowIST();     // IST-shifted — for reading IST date components
   const weeksMs = _prevWeeksShown * 7 * 86400000;
-  const cutEpoch = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - weeksMs;
+  const cutEpoch = Date.UTC(nowIst.getUTCFullYear(), nowIst.getUTCMonth(), nowIst.getUTCDate()) - weeksMs;
   const allSorted = [...duties].sort((a,b)=>a.date.localeCompare(b.date));
 
   // Respect active month filter
   const activeMonth = document.getElementById('duties-month-filter').value;
   const monthFiltered = activeMonth ? allSorted.filter(d=>d.date.slice(0,7)===activeMonth) : allSorted;
 
-  const allPrev = monthFiltered.filter(d => { const dt = getDebriefDT(d); return dt && dt < now; });
+  const allPrev = monthFiltered.filter(d => { const dt = getDebriefDT(d); return dt && dt < nowReal; });
   const visible = allPrev.filter(d => new Date(d.date+'T00:00:00Z').getTime() >= cutEpoch);
   const hasMore = allPrev.some(d => new Date(d.date+'T00:00:00Z').getTime() < cutEpoch);
   prevList.innerHTML = buildDutiesHTML(visible, allSorted);
@@ -1036,8 +1032,7 @@ function renderDutiesFull() {
     prevEl.innerHTML=''; toggleEl.style.display='none'; return;
   }
 
-  const now = nowIST();
-  let sorted = activeMonth
+  const now = new Date();  // real epoch for comparing with getDebriefDT() results
     ? allSorted.filter(d => d.date.slice(0,7) === activeMonth)
     : allSorted;
 
@@ -1488,8 +1483,7 @@ function buildLandingRow() {
 
 // Get the active report time string — from current/next duty, or null
 function getActiveDutyReportStr() {
-  const now = nowIST();
-    const sorted = [...duties].filter(d=>d.report&&d.debrief).sort((a,b)=>a.date.localeCompare(b.date));
+  const now = new Date();  // real epoch
   for (const d of sorted) {
     const repDT = getReportDT(d);
     const debDT = d.debrief ? getDebriefDT(d) : repDT;
@@ -1527,7 +1521,7 @@ function recalcFDP() {
   let expiryStr = '—', remainStr = '—', statusClass = 'ok';
   if (rptStr) {
     expiryStr = addMins(rptStr, displayFDP*60);
-    const now = nowIST();
+    const now = new Date();  // real epoch for arithmetic with istDT() results
     const [rh,rm] = rptStr.split(':').map(Number);
     // Build report datetime — use today or tomorrow if report is past midnight
     let rptDate = istDT(today(), rptStr);
@@ -1664,8 +1658,7 @@ function renderNextReport() {
     return;
   }
 
-  const now = nowIST();
-  const travelPenalty = false; // default — user sets this per-duty on log
+  const now = new Date();  // real wall-clock — for epoch arithmetic with istDT() results
 
   // Find the NEXT upcoming duty (report time in future) or current live duty
   let nextDuty = null, currentDuty = null, prevDuty = null;
