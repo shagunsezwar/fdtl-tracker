@@ -1033,6 +1033,7 @@ function renderDutiesFull() {
   }
 
   const now = new Date();  // real epoch for comparing with getDebriefDT() results
+  let sorted = activeMonth
     ? allSorted.filter(d => d.date.slice(0,7) === activeMonth)
     : allSorted;
 
@@ -1484,6 +1485,7 @@ function buildLandingRow() {
 // Get the active report time string — from current/next duty, or null
 function getActiveDutyReportStr() {
   const now = new Date();  // real epoch
+  const sorted = [...duties].filter(d=>d.report&&d.debrief).sort((a,b)=>a.date.localeCompare(b.date));
   for (const d of sorted) {
     const repDT = getReportDT(d);
     const debDT = d.debrief ? getDebriefDT(d) : repDT;
