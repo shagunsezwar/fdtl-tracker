@@ -1700,9 +1700,14 @@ function renderNextReport() {
     const repDT    = getReportDT(currentDuty);
     const debDT    = getDebriefDT(currentDuty);  // midnight-safe
 
-    // FDP expiry = report + maxFDP hours
-    const fdpExpiry = addMins(currentDuty.report, L.maxFDP * 60);
-    const expiryDT  = new Date(repDT.getTime() + L.maxFDP * 3600000);
+    // FDP expiry — apply WOCL reduction just like the FDP table does
+    const engOffStr  = addMins(currentDuty.report, L.maxFDP * 60); // engine off at base max FDP
+    const woclInfo   = woclEncroach(currentDuty.report, engOffStr);
+    const woclResult = applyWOCL(L.maxFDP, { ...woclInfo, engoffStr: engOffStr });
+    const effFDP     = woclResult.effFDP;   // WOCL-reduced FDP in hours
+    const fdpExpiry  = addMins(currentDuty.report, effFDP * 60);
+    const expiryDT   = new Date(repDT.getTime() + effFDP * 3600000);
+    const hasWOCL    = woclInfo.type !== 'none';
 
     const remainMs = expiryDT - now;
     const remH = Math.floor(remainMs/3600000);
@@ -1717,7 +1722,7 @@ function renderNextReport() {
       <div class="nr-time">${currentDuty.route||'—'}</div>
       <div class="nr-sub">
         Report: <strong>${currentDuty.report}</strong> · Debrief: <strong>${currentDuty.debrief}</strong><br>
-        FDP expires: <strong style="color:${expiredFDP?'var(--red)':'var(--cyan)'}">${fdpExpiry}</strong>
+        Planned FDP expires: <strong style="color:${expiredFDP?'var(--red)':'var(--cyan)'}">${fdpExpiry}</strong>${hasWOCL ? ' <span style="font-size:10px;color:var(--amber);background:rgba(255,170,0,.15);padding:1px 6px;border-radius:4px;vertical-align:middle">WOCL reduced</span>' : ''}
         ${!expiredFDP ? ` · <strong style="color:${remH<1?'var(--red)':remH<2?'var(--amber)':'var(--green)'}">${remH}h ${String(remM).padStart(2,'0')}m left</strong>` : ' · <strong style="color:var(--red)">⛔ FDP EXPIRED</strong>'}
         <br>Max FT: <strong>${L.maxFT}h</strong> · Landings: <strong>${currentDuty.landings||'—'}</strong>
       </div>
