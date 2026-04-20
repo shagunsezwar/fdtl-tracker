@@ -2805,31 +2805,35 @@ function openStandbyConvertModal(id) {
     const r  = document.getElementById('sbc-report').value;
     const db = document.getElementById('sbc-debrief').value;
     if (!r || !db) return;
-    const flightFDP = calcFDPh(r, db);
     const isAirport = sb.dtype === 'standby-apt';
-    const sbH = sb.fdp || 0;
+    const sbH = sb.fdp || 0;  // standby duration (report → debrief of standby)
 
-    // §2.11 contribution
-    let sbContrib = 0, note = '';
+    let totalFDP, note;
     if (isAirport) {
-      sbContrib = sbH;
-      note = `Airport SB: 100% of ${fmtH(sbH)} added to FDP (§2.11.2.2a)`;
-    } else if (sbH <= 6) {
-      sbContrib = 0;
-      note = `Home SB ≤6h: no FDP contribution (§2.11.2.3a)`;
+      // §2.11.2.2a — FDP starts at ORIGINAL standby report time, ends at engine-off
+      // Engine-off = flight debrief − 30min
+      // So totalFDP = calcFDPh(sb.report, db) — from SB report to flight eng-off
+      totalFDP = calcFDPh(sb.report, db);
+      note = `Airport SB: FDP from SB report (${sb.report}) → eng-off · ${fmtH(totalFDP)} total (§2.11.2.2a)`;
     } else {
-      sbContrib = sbH * 0.5;
-      note = `Home SB >6h: 50% of ${fmtH(sbH)} = ${fmtH(sbContrib)} added to FDP (§2.11.2.3b)`;
+      // Home/hotel standby — flight FDP only, then add contribution
+      const flightFDP = calcFDPh(r, db);
+      let sbContrib = 0;
+      if (sbH <= 6) {
+        sbContrib = 0;
+        note = `Home SB ≤6h: no FDP contribution (§2.11.2.3a) · Flight FDP: ${fmtH(flightFDP)}`;
+      } else {
+        sbContrib = sbH * 0.5;
+        note = `Home SB >6h: 50% of ${fmtH(sbH)} = ${fmtH(sbContrib)} added to Flight FDP ${fmtH(flightFDP)} (§2.11.2.3b)`;
+      }
+      totalFDP = flightFDP + sbContrib;
     }
-    const totalFDP = flightFDP + sbContrib;
-    const totalDP  = isAirport ? (sbH + flightFDP) : totalFDP; // §2.11.2.2a: 100% SB + flight FDP for airport
-    const night = isNightDuty(r, db) ? '🌙 Night duty' : '';
+
+    const night = isNightDuty(isAirport ? sb.report : r, db) ? '🌙 Night duty' : '';
     document.getElementById('sbc-preview').innerHTML =
       `<div style="font-size:11px;line-height:1.8">
-       Flight FDP: <strong style="color:var(--cyan)">${fmtH(flightFDP)}</strong><br>
-       SB contribution to FDP: <strong>+${fmtH(sbContrib)}</strong> · ${note}<br>
-       <strong style="color:var(--green)">Total effective FDP: ${fmtH(totalFDP)}</strong><br>
-       ${isAirport ? `<span style="color:var(--amber)">Cumulative DP: Airport SB ${fmtH(sbH)} + Flight ${fmtH(flightFDP)} = <strong>${fmtH(totalDP)}</strong> (§2.11.2.2a)</span>` : ''}
+       ${note}<br>
+       <strong style="color:var(--green)">Total effective FDP: ${fmtH(totalFDP)}</strong>
        ${night ? `<br><span style="color:var(--amber)">${night}</span>` : ''}
        </div>`;
   }
@@ -2868,19 +2872,28 @@ function saveStandbyConvert(sbId) {
     block = +(bh + bm/60).toFixed(2);
   }
 
-  const flightFDP = calcFDPh(report, debrief);
-  const night     = isNightDuty(report, debrief) ? 'yes' : 'no';
   const isAirport = sb.dtype === 'standby-apt';
   const sbH       = sb.fdp || 0;
 
-  // §2.11 contribution
-  let sbContrib = 0;
-  if (isAirport)        sbContrib = sbH;
-  else if (sbH > 6)     sbContrib = sbH * 0.5;
+  // §2.11.2.2a — Airport standby: FDP = sb.report → engine-off (one continuous window)
+  // §2.11.2.3  — Home standby: flightFDP + 0% or 50% of sbH
+  let totalFDP, sbContrib, flightFDP;
+  flightFDP = calcFDPh(report, debrief);   // flight report → engine-off
+  if (isAirport) {
+    totalFDP  = calcFDPh(sb.report, debrief); // SB report → engine-off = true FDP
+    sbContrib = +(totalFDP - flightFDP).toFixed(2); // informational only
+  } else {
+    sbContrib = sbH > 6 ? sbH * 0.5 : 0;
+    totalFDP  = flightFDP + sbContrib;
+  }
+  totalFDP = +totalFDP.toFixed(2);
 
-  const totalFDP    = +(flightFDP + sbContrib).toFixed(2);
-  // §2.11.2.2a: cumulative DP = 100% of SB period + flight FDP for airport standby
-  const cumulativeDP = isAirport ? +(sbH + flightFDP).toFixed(2) : totalFDP;
+  // For cumulative DP: airport standby = same as totalFDP (already from SB report)
+  //                    home standby = full SB period + flight FDP counts as DP
+  const cumulativeDP = isAirport ? totalFDP : +(sbH + flightFDP).toFixed(2);
+
+  // Night detection — for airport SB use SB report as window start
+  const night = isNightDuty(isAirport ? sb.report : report, debrief) ? 'yes' : 'no';
 
   // Compute debriefDate for midnight crossover
   const [rH,rM] = report.split(':').map(Number);
