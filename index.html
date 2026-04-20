@@ -946,10 +946,34 @@ function filterDays(n) {
   const ist = nowIST();
   // midnight IST n days ago — as UTC epoch
   const cut = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()) - n*86400000;
-  return duties.filter(d=>(d.dtype==='flight'||d.dtype==='flight-deadhead') && new Date(d.date+'T00:00:00Z').getTime() >= cut);
+  // Include flights AND standby — all count toward cumulative DP per §2.11.2.2b
+  return duties.filter(d => {
+    const isRelevant = d.dtype === 'flight' || d.dtype === 'flight-deadhead'
+                    || d.dtype === 'standby-apt' || d.dtype === 'standby-home';
+    return isRelevant && new Date(d.date+'T00:00:00Z').getTime() >= cut;
+  });
 }
 const sumFT = ds => +ds.reduce((s,d)=>s+(d.block||0),0).toFixed(1);
-const sumDP = ds => +ds.reduce((s,d)=>s+(d.fdp||0),0).toFixed(1);
+
+// sumDP: cumulative duty period per §2.11.2.2
+// Airport standby (no flight): 100% of standby period → DP
+// Airport standby (converted to flight): totalFDP already = sbH + flightFDP → DP
+// Home/hotel standby: full duty period counts as DP (not FDP, but still DP)
+// Flight duty: FDP = DP for cumulative purposes
+const sumDP = ds => +ds.reduce((s,d) => {
+  if (d.dtype === 'standby-apt') {
+    // 100% of airport standby period counts as DP (§2.11.2.2)
+    // If converted, d.fdp = totalFDP (sbH + flightFDP) — already correct
+    // If not converted, d.fdp = standby period — also correct
+    return s + (d.fdp || 0);
+  }
+  if (d.dtype === 'standby-home') {
+    // Home standby full period counts as DP
+    return s + (d.fdp || 0);
+  }
+  // Flight duties: FDP counts as DP
+  return s + (d.fdp || 0);
+}, 0).toFixed(1);
 
 // ── Navigation ──
 let _clockTimer=null, _dashTimer=null;
@@ -1194,6 +1218,13 @@ function buildDutiesHTML(list, allSorted) {
         </div>
         ${(d.issues||[]).map(x=>`<div class="dc-issue">⛔ ${x}</div>`).join('')}
         ${(d.warns||[]).map(x=>`<div class="dc-warn-msg">⚠ ${x}</div>`).join('')}
+        ${d.dtype === 'standby-apt' && !d.convertedFlight ? `
+        <div style="margin-top:8px;padding:8px 10px;background:rgba(0,180,255,.07);
+          border-left:3px solid var(--cyan);border-radius:0 6px 6px 0;font-size:10px;
+          color:var(--muted);line-height:1.6">
+          <span style="color:var(--cyan);font-weight:700">§2.11.2.2 Airport Standby</span><br>
+          100% counts as cumulative DP · Swipe → to convert if flight assigned
+        </div>` : ''}
         ${d.convertedFlight ? (() => {
           const cf = d.convertedFlight;
           const cfCls = cf.status||'ok';
@@ -1212,8 +1243,13 @@ function buildDutiesHTML(list, allSorted) {
               <div class="dcd"><div class="dd-k">Total FDP</div><div class="dd-v" style="color:${cfCls==='ok'?'var(--green)':'var(--red)'}">${fmtH(cf.totalFDP)}</div></div>
               <div class="dcd"><div class="dd-k">Block</div><div class="dd-v">${fmtHHMM(cf.block)}</div></div>
               <div class="dcd"><div class="dd-k">Landings</div><div class="dd-v">${cf.landings}</div></div>
-              <div class="dcd"><div class="dd-k">SB contrib</div><div class="dd-v">+${fmtH(cf.sbContrib)}</div></div>
+              <div class="dcd"><div class="dd-k">SB → FDP</div><div class="dd-v">+${fmtH(cf.sbContrib)}</div></div>
             </div>
+            ${d.dtype==='standby-apt' && cf.cumulativeDP ? `
+            <div style="margin-top:6px;font-size:10px;color:var(--amber);padding:5px 8px;
+              background:rgba(245,166,35,.08);border-radius:5px">
+              §2.11.2.2a · Cumulative DP: ${fmtH(cf.cumulativeDP)} (SB + Flight)
+            </div>` : ''}
             ${cf.issues.map(x=>`<div class="dc-issue" style="margin-top:4px">⛔ ${x}</div>`).join('')}
             <button onclick="clearStandbyConvert(${d.id})" style="margin-top:8px;font-size:10px;
               background:none;border:1px solid var(--edge2);border-radius:5px;
@@ -2749,12 +2785,16 @@ function openStandbyConvertModal(id) {
       note = `Home SB >6h: 50% of ${fmtH(sbH)} = ${fmtH(sbContrib)} added to FDP (§2.11.2.3b)`;
     }
     const totalFDP = flightFDP + sbContrib;
+    const totalDP  = isAirport ? (sbH + flightFDP) : totalFDP; // §2.11.2.2a: 100% SB + flight FDP for airport
     const night = isNightDuty(r, db) ? '🌙 Night duty' : '';
     document.getElementById('sbc-preview').innerHTML =
-      `Flight FDP: <strong style="color:var(--cyan)">${fmtH(flightFDP)}</strong><br>
-       SB contribution: <strong>+${fmtH(sbContrib)}</strong> · ${note}<br>
-       Total effective FDP: <strong style="color:var(--text)">${fmtH(totalFDP)}</strong>
-       ${night ? '<br><span style="color:var(--amber)">'+night+'</span>' : ''}`;
+      `<div style="font-size:11px;line-height:1.8">
+       Flight FDP: <strong style="color:var(--cyan)">${fmtH(flightFDP)}</strong><br>
+       SB contribution to FDP: <strong>+${fmtH(sbContrib)}</strong> · ${note}<br>
+       <strong style="color:var(--green)">Total effective FDP: ${fmtH(totalFDP)}</strong><br>
+       ${isAirport ? `<span style="color:var(--amber)">Cumulative DP: Airport SB ${fmtH(sbH)} + Flight ${fmtH(flightFDP)} = <strong>${fmtH(totalDP)}</strong> (§2.11.2.2a)</span>` : ''}
+       ${night ? `<br><span style="color:var(--amber)">${night}</span>` : ''}
+       </div>`;
   }
 }
 
@@ -2801,7 +2841,9 @@ function saveStandbyConvert(sbId) {
   if (isAirport)        sbContrib = sbH;
   else if (sbH > 6)     sbContrib = sbH * 0.5;
 
-  const totalFDP = +(flightFDP + sbContrib).toFixed(2);
+  const totalFDP    = +(flightFDP + sbContrib).toFixed(2);
+  // §2.11.2.2a: cumulative DP = 100% of SB period + flight FDP for airport standby
+  const cumulativeDP = isAirport ? +(sbH + flightFDP).toFixed(2) : totalFDP;
 
   // Compute debriefDate for midnight crossover
   const [rH,rM] = report.split(':').map(Number);
@@ -2823,11 +2865,11 @@ function saveStandbyConvert(sbId) {
     ...sb,
     convertedFlight: {
       route, report, debrief, debriefDate, block, landings: land, crew, night,
-      flightFDP, sbContrib, totalFDP, issues, warns,
+      flightFDP, sbContrib, totalFDP, cumulativeDP, issues, warns,
       status: issues.length ? 'bad' : warns.length ? 'warn' : 'ok'
     },
-    // Update the standby's effective FDP/debrief for rest calculations
-    fdp: totalFDP,
+    // fdp = cumulativeDP so filterDays/sumDP count the full §2.11.2.2a period
+    fdp: cumulativeDP,
     debrief: debrief,
     debriefDate: debriefDate,
     night: night
