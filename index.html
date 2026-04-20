@@ -438,7 +438,7 @@ textarea{resize:none;min-height:160px;font-size:12px;line-height:1.7}
   <div id="nr-box-el"></div>
 
   <!-- FDP limits table — info only, based on next/current duty report time -->
-  <div class="pcard">
+  <div class="pcard" id="fdp-limits-card">
     <div class="pchead">
       FDP limits — §2.6.1
       <span class="pctag" id="fdp-mode-tag">Day duty</span>
@@ -1687,7 +1687,9 @@ function calcNextReportDT(lastDuty, travelPenalty) {
 
 function renderNextReport() {
   const el = document.getElementById('nr-box-el');
-    const sorted = [...duties].filter(d=>d.report&&d.debrief).sort((a,b)=>a.date.localeCompare(b.date));
+  // Always restore FDP limits visibility — standby path may have hidden it
+  document.getElementById('fdp-limits-card').style.display = '';
+  const sorted = [...duties].filter(d=>d.report&&d.debrief).sort((a,b)=>a.date.localeCompare(b.date));
   if (!sorted.length) {
     el.innerHTML = `<div class="nr-box" style="border-color:rgba(90,112,128,.3)">
       <div class="nr-label">📋 No duties logged</div>
@@ -1732,15 +1734,48 @@ function renderNextReport() {
 
   // ── CASE 1: Currently in a duty (FDP live) ──
   if (currentDuty) {
+    const isStandby   = currentDuty.dtype && currentDuty.dtype.startsWith('standby');
+    const isAptSB     = currentDuty.dtype === 'standby-apt';
+    const hasFlight   = isStandby && currentDuty.convertedFlight;
+    const repDT       = getReportDT(currentDuty);
+    const debDT       = getDebriefDT(currentDuty);
+
+    if (isStandby && !hasFlight) {
+      // ── Pure standby — show minimal card, hide FDP table ──
+      const sbEndsMs  = debDT - now;
+      const sbH       = Math.floor(Math.max(0, sbEndsMs) / 3600000);
+      const sbM       = Math.floor((Math.max(0, sbEndsMs) % 3600000) / 60000);
+      const sbEnded   = sbEndsMs <= 0;
+      const sbLabel   = isAptSB ? '📍 AIRPORT STANDBY — LIVE' : '🏠 HOME STANDBY — LIVE';
+      const sbColor   = isAptSB ? 'var(--amber)' : 'var(--cyan)';
+
+      document.getElementById('fdp-limits-card').style.display = 'none';
+
+      el.innerHTML = `<div class="nr-box" style="border-color:rgba(245,166,35,.35);background:linear-gradient(135deg,rgba(245,166,35,.07),rgba(180,100,0,.05))">
+        <div class="nr-label" style="color:${sbColor}">${sbLabel}</div>
+        <div class="nr-time" style="font-size:28px">${currentDuty.route||'Standby'}</div>
+        <div class="nr-sub">
+          Report: <strong>${currentDuty.report}</strong> · Standby ends: <strong>${currentDuty.debrief}</strong><br>
+          ${sbEnded
+            ? `<strong style="color:var(--red)">⛔ Standby period ended</strong>`
+            : `Ends in: <strong style="color:${sbH<1?'var(--red)':sbH<2?'var(--amber)':'var(--green)'}">${sbH}h ${String(sbM).padStart(2,'0')}m</strong>`}
+          <br><span style="font-size:10px;color:var(--muted)">§2.11.2.2 · 100% counts as cumulative DP${isAptSB?' · Swipe → on Duties to convert if flight assigned':''}</span>
+        </div>
+      </div>`;
+      recalcFDP();
+      return;
+    }
+
+    // ── Flight duty (or converted standby) — show full FDP card ──
+    document.getElementById('fdp-limits-card').style.display = '';
+
     const L = getLimits(currentDuty.landings||2, currentDuty.night||'no', currentDuty.crew||'2p');
-    const repDT    = getReportDT(currentDuty);
-    const debDT    = getDebriefDT(currentDuty);  // midnight-safe
 
     // FDP expiry — apply WOCL reduction just like the FDP table does
-    const engOffStr  = addMins(currentDuty.report, L.maxFDP * 60); // engine off at base max FDP
+    const engOffStr  = addMins(currentDuty.report, L.maxFDP * 60);
     const woclInfo   = woclEncroach(currentDuty.report, engOffStr);
     const woclResult = applyWOCL(L.maxFDP, { ...woclInfo, engoffStr: engOffStr });
-    const effFDP     = woclResult.effFDP;   // WOCL-reduced FDP in hours
+    const effFDP     = woclResult.effFDP;
     const fdpExpiry  = addMins(currentDuty.report, effFDP * 60);
     const expiryDT   = new Date(repDT.getTime() + effFDP * 3600000);
     const hasWOCL    = woclInfo.type !== 'none';
@@ -1750,7 +1785,6 @@ function renderNextReport() {
     const remM = Math.floor((remainMs%3600000)/60000);
     const expiredFDP = remainMs <= 0;
 
-    // Auto-select landings from current duty
     selLandings = currentDuty.landings || 2;
 
     el.innerHTML = `<div class="nr-box" style="border-color:rgba(0,230,118,.35);background:linear-gradient(135deg,rgba(0,230,118,.07),rgba(0,128,80,.05))">
@@ -1811,6 +1845,9 @@ function renderNextReport() {
     const isNextSB = nextDuty.dtype && nextDuty.dtype.startsWith('standby');
     const cf = nextDuty.convertedFlight;
     const hasCF = isNextSB && cf;
+
+    // Hide FDP limits for upcoming pure standby, show for flights
+    document.getElementById('fdp-limits-card').style.display = (isNextSB && !hasCF) ? 'none' : '';
 
     // Label & icon
     let dutyIcon = '🕐', dutyTypeLabel = '';
