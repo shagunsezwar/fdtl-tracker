@@ -1225,6 +1225,13 @@ function buildDutiesHTML(list, allSorted) {
           <span style="color:var(--cyan);font-weight:700">§2.11.2.2 Airport Standby</span><br>
           100% counts as cumulative DP · Swipe → to convert if flight assigned
         </div>` : ''}
+        ${d.dtype === 'standby-home' && !d.convertedFlight ? `
+        <div style="margin-top:8px;padding:8px 10px;background:rgba(0,180,255,.07);
+          border-left:3px solid var(--cyan);border-radius:0 6px 6px 0;font-size:10px;
+          color:var(--muted);line-height:1.6">
+          <span style="color:var(--cyan);font-weight:700">§2.11.2.3 Home/Hotel Standby</span><br>
+          ≤6h: no FDP contribution · &gt;6h: 50% added to FDP if flight assigned
+        </div>` : ''}
         ${d.convertedFlight ? (() => {
           const cf = d.convertedFlight;
           const cfCls = cf.status||'ok';
@@ -1759,7 +1766,10 @@ function renderNextReport() {
           ${sbEnded
             ? `<strong style="color:var(--red)">⛔ Standby period ended</strong>`
             : `Ends in: <strong style="color:${sbH<1?'var(--red)':sbH<2?'var(--amber)':'var(--green)'}">${sbH}h ${String(sbM).padStart(2,'0')}m</strong>`}
-          <br><span style="font-size:10px;color:var(--muted)">§2.11.2.2 · 100% counts as cumulative DP${isAptSB?' · Swipe → on Duties to convert if flight assigned':''}</span>
+          <br><span style="font-size:10px;color:var(--muted)">${isAptSB
+            ? '§2.11.2.2 · 100% counts as cumulative DP · Swipe → on Duties to convert if flight assigned'
+            : '§2.11.2.3 · Counts as DP · ≤6h: no FDP contrib · >6h: 50% added to FDP if flight assigned'
+          }</span>
         </div>
       </div>`;
       recalcFDP();
@@ -1801,14 +1811,28 @@ function renderNextReport() {
 
     selLandings = (cf ? cf.landings : currentDuty.landings) || 2;
 
-    const sbBanner = hasFlight ? `
-      <div style="margin-bottom:8px;padding:7px 10px;background:rgba(245,166,35,.1);
-        border-left:3px solid var(--amber);border-radius:0 6px 6px 0;font-size:10px;line-height:1.6">
-        <span style="color:var(--amber);font-weight:700">📍 Airport Standby → Flight</span><br>
-        SB report: <strong>${currentDuty.report}</strong> · SB ends: <strong>${currentDuty.debrief}</strong>
-        · Duration: <strong>${fmtH(currentDuty.fdp||0)}</strong>
-        <br>FDP starts from SB report <strong>${currentDuty.report}</strong> · §2.11.2.2a
-      </div>` : '';
+    const sbBanner = hasFlight ? (() => {
+      const cf = currentDuty.convertedFlight;
+      if (currentDuty.dtype === 'standby-apt') {
+        return `<div style="margin-bottom:8px;padding:7px 10px;background:rgba(245,166,35,.1);
+          border-left:3px solid var(--amber);border-radius:0 6px 6px 0;font-size:10px;line-height:1.6">
+          <span style="color:var(--amber);font-weight:700">📍 Airport Standby → Flight</span><br>
+          SB report: <strong>${currentDuty.report}</strong> · SB ends: <strong>${currentDuty.debrief}</strong>
+          · Duration: <strong>${fmtH(currentDuty.fdp||0)}</strong>
+          <br>FDP starts from SB report <strong>${currentDuty.report}</strong> · §2.11.2.2a
+        </div>`;
+      } else {
+        const sbH2 = currentDuty.fdp || 0;
+        const contrib = sbH2 > 6 ? `50% of ${fmtH(sbH2)} = ${fmtH(sbH2*0.5)} added to FDP (§2.11.2.3b)` : `No FDP contribution (≤6h · §2.11.2.3a)`;
+        return `<div style="margin-bottom:8px;padding:7px 10px;background:rgba(0,180,255,.08);
+          border-left:3px solid var(--cyan);border-radius:0 6px 6px 0;font-size:10px;line-height:1.6">
+          <span style="color:var(--cyan);font-weight:700">🏠 Home/Hotel Standby → Flight</span><br>
+          SB report: <strong>${currentDuty.report}</strong> · SB ends: <strong>${currentDuty.debrief}</strong>
+          · Duration: <strong>${fmtH(sbH2)}</strong>
+          <br>${contrib}
+        </div>`;
+      }
+    })() : '';
 
     el.innerHTML = `<div class="nr-box" style="border-color:rgba(0,230,118,.35);background:linear-gradient(135deg,rgba(0,230,118,.07),rgba(0,128,80,.05))">
       <div class="nr-label" style="color:var(--green)">✈ DUTY LIVE — FDP active</div>
@@ -1898,12 +1922,24 @@ function renderNextReport() {
       // ── Converted standby → flight ──
       const cfL = getLimits(cf.landings||1, cf.night||'no', cf.crew||'2p');
       const cfFdpExpiry = addMins(nextDuty.report, cf.totalFDP * 60);
+      const isAptConv = nextDuty.dtype === 'standby-apt';
+      const sbH2 = nextDuty.fdp || 0;
+      const sbBannerNote = isAptConv
+        ? `FDP starts from SB report <strong>${nextDuty.report}</strong> · §2.11.2.2a`
+        : (sbH2 > 6
+          ? `50% of ${fmtH(sbH2)} = ${fmtH(sbH2*0.5)} added to Flight FDP · §2.11.2.3b`
+          : `SB ≤6h: no FDP contribution · §2.11.2.3a`);
+      const sbBannerColor = isAptConv ? 'rgba(245,166,35,.1)' : 'rgba(0,180,255,.08)';
+      const sbBannerBorder = isAptConv ? 'var(--amber)' : 'var(--cyan)';
+      const sbBannerLabel = isAptConv ? '📍 Airport Standby → Flight' : '🏠 Home/Hotel Standby → Flight';
+      const sbBannerTextColor = isAptConv ? 'var(--amber)' : 'var(--cyan)';
       cardBody = `
-        <div style="margin-bottom:6px;padding:7px 10px;background:rgba(245,166,35,.1);
-          border-left:3px solid var(--amber);border-radius:0 6px 6px 0;font-size:10px;line-height:1.7">
-          <span style="color:var(--amber);font-weight:700">📍 Airport Standby → Flight</span><br>
+        <div style="margin-bottom:6px;padding:7px 10px;background:${sbBannerColor};
+          border-left:3px solid ${sbBannerBorder};border-radius:0 6px 6px 0;font-size:10px;line-height:1.7">
+          <span style="color:${sbBannerTextColor};font-weight:700">${sbBannerLabel}</span><br>
           SB report: <strong>${nextDuty.report}</strong> · SB ends: <strong>${nextDuty.debrief}</strong>
-          · Duration: <strong>${fmtH(nextDuty.fdp||0)}</strong>
+          · Duration: <strong>${fmtH(sbH2)}</strong><br>
+          ${sbBannerNote}
         </div>
         <div class="nr-time">✈ ${cf.route||'—'}</div>
         <div class="nr-sub">
@@ -1912,20 +1948,22 @@ function renderNextReport() {
           · Planned expires: <strong>${cfFdpExpiry}</strong><br>
           Max FT: <strong>${cfL.maxFT}h</strong> · Ldg: <strong>${cf.landings}</strong>
           ${cf.night==='yes'?' · <span style="color:var(--amber)">🌙 Night</span>':''}
-          <br><span style="font-size:10px;color:var(--muted)">FDP from SB report ${nextDuty.report} · §2.11.2.2a</span>
         </div>`;
     } else if (isNextSB) {
       // ── Pure standby ──
-      const sbDebDT = getDebriefDT(nextDuty);
       const sbDurH = nextDuty.fdp || 0;
-      const maxSB = nextDuty.dtype === 'standby-apt' ? 8 : 12;
+      const isAptNext = nextDuty.dtype === 'standby-apt';
+      const maxSB = isAptNext ? 8 : 12;
+      const dpNote = isAptNext
+        ? '100% counts as cumulative DP · §2.11.2.2'
+        : '≤6h: no FDP contrib · >6h: 50% of SB added to FDP · §2.11.2.3';
       cardBody = `
         <div class="nr-time" style="font-size:26px">${nextDuty.route||'Standby'}</div>
         <div class="nr-sub">
           Report: <strong>${nextDuty.report}</strong> · Ends: <strong>${nextDuty.debrief}</strong>
           · Duration: <strong>${fmtH(sbDurH)}</strong><br>
           Max standby: <strong>${maxSB}h</strong> · §2.11.2.1
-          <br><span style="font-size:10px;color:var(--muted)">100% counts as cumulative DP · §2.11.2.2</span>
+          <br><span style="font-size:10px;color:var(--muted)">${dpNote}</span>
         </div>`;
     } else {
       // ── Regular flight duty ──
@@ -2936,9 +2974,10 @@ function saveStandbyConvert(sbId) {
   }
   totalFDP = +totalFDP.toFixed(2);
 
-  // For cumulative DP: airport standby = same as totalFDP (already from SB report)
-  //                    home standby = full SB period + flight FDP counts as DP
-  const cumulativeDP = isAirport ? totalFDP : +(sbH + flightFDP).toFixed(2);
+  // Cumulative DP:
+  // Airport SB → flight: entire window from SB report = totalFDP (§2.11.2.2a)
+  // Home SB → flight: flight FDP + SB contribution (§2.11.2.3)
+  const cumulativeDP = isAirport ? totalFDP : +(flightFDP + sbContrib).toFixed(2);
 
   // Night detection — for airport SB use SB report as window start
   const night = isNightDuty(isAirport ? sb.report : report, debrief) ? 'yes' : 'no';
