@@ -953,7 +953,7 @@ function filterDays(n) {
     return isRelevant && new Date(d.date+'T00:00:00Z').getTime() >= cut;
   });
 }
-const sumFT = ds => +ds.reduce((s,d)=>s+(d.block||0),0).toFixed(1);
+const sumFT = ds => +ds.reduce((s,d) => s + (d.block || (d.convertedFlight && d.convertedFlight.block) || 0), 0).toFixed(1);
 
 // sumDP: cumulative duty period per §2.11.2.2
 // Airport standby (no flight): 100% of standby period → DP
