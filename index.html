@@ -1769,32 +1769,59 @@ function renderNextReport() {
     // ── Flight duty (or converted standby) — show full FDP card ──
     document.getElementById('fdp-limits-card').style.display = '';
 
-    const L = getLimits(currentDuty.landings||2, currentDuty.night||'no', currentDuty.crew||'2p');
+    const cf = hasFlight ? currentDuty.convertedFlight : null;
+    const flightReport  = cf ? cf.report  : currentDuty.report;
+    const flightDebrief = cf ? cf.debrief : currentDuty.debrief;
+    const flightRoute   = cf ? cf.route   : (currentDuty.route||'—');
+    const fdpForLimits  = cf ? cf.totalFDP : null;
 
-    // FDP expiry — apply WOCL reduction just like the FDP table does
-    const engOffStr  = addMins(currentDuty.report, L.maxFDP * 60);
-    const woclInfo   = woclEncroach(currentDuty.report, engOffStr);
-    const woclResult = applyWOCL(L.maxFDP, { ...woclInfo, engoffStr: engOffStr });
-    const effFDP     = woclResult.effFDP;
-    const fdpExpiry  = addMins(currentDuty.report, effFDP * 60);
-    const expiryDT   = new Date(repDT.getTime() + effFDP * 3600000);
-    const hasWOCL    = woclInfo.type !== 'none';
+    // For FDP expiry use the effective totalFDP (already WOCL-aware for converted)
+    // For plain flight, compute via WOCL
+    let effFDP, fdpExpiry, expiryDT, hasWOCL;
+    if (cf) {
+      effFDP    = cf.totalFDP;
+      fdpExpiry = addMins(currentDuty.report, effFDP * 60); // from SB report
+      expiryDT  = new Date(repDT.getTime() + effFDP * 3600000);
+      hasWOCL   = false; // already computed during conversion
+    } else {
+      const L = getLimits(currentDuty.landings||2, currentDuty.night||'no', currentDuty.crew||'2p');
+      const engOffStr  = addMins(currentDuty.report, L.maxFDP * 60);
+      const woclInfo   = woclEncroach(currentDuty.report, engOffStr);
+      const woclResult = applyWOCL(L.maxFDP, { ...woclInfo, engoffStr: engOffStr });
+      effFDP    = woclResult.effFDP;
+      fdpExpiry = addMins(currentDuty.report, effFDP * 60);
+      expiryDT  = new Date(repDT.getTime() + effFDP * 3600000);
+      hasWOCL   = woclInfo.type !== 'none';
+    }
 
-    const remainMs = expiryDT - now;
-    const remH = Math.floor(remainMs/3600000);
-    const remM = Math.floor((remainMs%3600000)/60000);
+    const remainMs   = expiryDT - now;
+    const remH       = Math.floor(remainMs/3600000);
+    const remM       = Math.floor((remainMs%3600000)/60000);
     const expiredFDP = remainMs <= 0;
 
-    selLandings = currentDuty.landings || 2;
+    selLandings = (cf ? cf.landings : currentDuty.landings) || 2;
+
+    const sbBanner = hasFlight ? `
+      <div style="margin-bottom:8px;padding:7px 10px;background:rgba(245,166,35,.1);
+        border-left:3px solid var(--amber);border-radius:0 6px 6px 0;font-size:10px;line-height:1.6">
+        <span style="color:var(--amber);font-weight:700">📍 Airport Standby → Flight</span><br>
+        SB report: <strong>${currentDuty.report}</strong> · SB ends: <strong>${currentDuty.debrief}</strong>
+        · Duration: <strong>${fmtH(currentDuty.fdp||0)}</strong>
+        <br>FDP starts from SB report <strong>${currentDuty.report}</strong> · §2.11.2.2a
+      </div>` : '';
 
     el.innerHTML = `<div class="nr-box" style="border-color:rgba(0,230,118,.35);background:linear-gradient(135deg,rgba(0,230,118,.07),rgba(0,128,80,.05))">
       <div class="nr-label" style="color:var(--green)">✈ DUTY LIVE — FDP active</div>
-      <div class="nr-time">${currentDuty.route||'—'}</div>
+      ${sbBanner}
+      <div class="nr-time">${flightRoute}</div>
       <div class="nr-sub">
-        Report: <strong>${currentDuty.report}</strong> · Debrief: <strong>${currentDuty.debrief}</strong><br>
-        Planned FDP expires: <strong style="color:${expiredFDP?'var(--red)':'var(--cyan)'}">${fdpExpiry}</strong>${hasWOCL ? ' <span style="font-size:10px;color:var(--amber);background:rgba(255,170,0,.15);padding:1px 6px;border-radius:4px;vertical-align:middle">WOCL reduced</span>' : ''}
-        ${!expiredFDP ? ` · <strong style="color:${remH<1?'var(--red)':remH<2?'var(--amber)':'var(--green)'}">${remH}h ${String(remM).padStart(2,'0')}m left</strong>` : ' · <strong style="color:var(--red)">⛔ FDP EXPIRED</strong>'}
-        <br>Max FT: <strong>${L.maxFT}h</strong> · Landings: <strong>${currentDuty.landings||'—'}</strong>
+        Report: <strong>${flightReport}</strong> · Debrief: <strong>${flightDebrief}</strong><br>
+        Planned FDP expires: <strong style="color:${expiredFDP?'var(--red)':'var(--cyan)'}">${fdpExpiry}</strong>
+        ${hasWOCL ? ' <span style="font-size:10px;color:var(--amber);background:rgba(255,170,0,.15);padding:1px 6px;border-radius:4px;vertical-align:middle">WOCL reduced</span>' : ''}
+        ${!expiredFDP
+          ? ` · <strong style="color:${remH<1?'var(--red)':remH<2?'var(--amber)':'var(--green)'}">${remH}h ${String(remM).padStart(2,'0')}m left</strong>`
+          : ' · <strong style="color:var(--red)">⛔ FDP EXPIRED</strong>'}
+        ${cf ? `<br>Total FDP: <strong style="color:var(--cyan)">${fmtH(cf.totalFDP)}</strong> · Ldg: <strong>${cf.landings}</strong>` : `<br>Max FT: <strong>${getLimits(currentDuty.landings||2,currentDuty.night||'no','2p').maxFT}h</strong> · Landings: <strong>${currentDuty.landings||'—'}</strong>`}
       </div>
     </div>`;
     recalcFDP();
@@ -1865,37 +1892,58 @@ function renderNextReport() {
     const mainRoute = hasCF ? (cf.route||'—') : (nextDuty.route || (isNextSB ? 'Standby' : '—'));
     const mainReport = hasCF ? cf.report : nextDuty.report;
 
-    // FDP line for flight/converted
-    let fdpLine = '';
-    if (!isNextSB) {
-      // Night duty note only — Max FDP/FT already shown in FDP limits table below
-      fdpLine = nextDuty.night==='yes'
-        ? `<br><span style="color:var(--amber);font-size:10px">🌙 Night duty</span>`
-        : '';
-    } else if (hasCF) {
+    // FDP line and card body for flight/converted/standby
+    let cardBody = '';
+    if (hasCF) {
+      // ── Converted standby → flight ──
       const cfL = getLimits(cf.landings||1, cf.night||'no', cf.crew||'2p');
-      fdpLine = `<br><span style="font-size:10px;color:var(--muted)">
-        Total FDP: <strong style="color:var(--cyan)">${fmtH(cf.totalFDP)}</strong>
-        · Ldg: <strong>${cf.landings}</strong>
-        · SB contrib: <strong>+${fmtH(cf.sbContrib)}</strong>
-        ${cf.night==='yes'?'· <span style="color:var(--amber)">🌙 Night</span>':''}
-      </span>`;
-    } else {
-      // Pure standby — show max standby duration
+      const cfFdpExpiry = addMins(nextDuty.report, cf.totalFDP * 60);
+      cardBody = `
+        <div style="margin-bottom:6px;padding:7px 10px;background:rgba(245,166,35,.1);
+          border-left:3px solid var(--amber);border-radius:0 6px 6px 0;font-size:10px;line-height:1.7">
+          <span style="color:var(--amber);font-weight:700">📍 Airport Standby → Flight</span><br>
+          SB report: <strong>${nextDuty.report}</strong> · SB ends: <strong>${nextDuty.debrief}</strong>
+          · Duration: <strong>${fmtH(nextDuty.fdp||0)}</strong>
+        </div>
+        <div class="nr-time">✈ ${cf.route||'—'}</div>
+        <div class="nr-sub">
+          Flight report: <strong>${cf.report}</strong> · Debrief: <strong>${cf.debrief}</strong><br>
+          Total FDP: <strong style="color:var(--cyan)">${fmtH(cf.totalFDP)}</strong>
+          · Planned expires: <strong>${cfFdpExpiry}</strong><br>
+          Max FT: <strong>${cfL.maxFT}h</strong> · Ldg: <strong>${cf.landings}</strong>
+          ${cf.night==='yes'?' · <span style="color:var(--amber)">🌙 Night</span>':''}
+          <br><span style="font-size:10px;color:var(--muted)">FDP from SB report ${nextDuty.report} · §2.11.2.2a</span>
+        </div>`;
+    } else if (isNextSB) {
+      // ── Pure standby ──
+      const sbDebDT = getDebriefDT(nextDuty);
+      const sbDurH = nextDuty.fdp || 0;
       const maxSB = nextDuty.dtype === 'standby-apt' ? 8 : 12;
-      fdpLine = `<br><span style="font-size:10px;color:var(--muted)">
-        Max standby: <strong>${maxSB}h</strong> · §2.11.2.1
-      </span>`;
+      cardBody = `
+        <div class="nr-time" style="font-size:26px">${nextDuty.route||'Standby'}</div>
+        <div class="nr-sub">
+          Report: <strong>${nextDuty.report}</strong> · Ends: <strong>${nextDuty.debrief}</strong>
+          · Duration: <strong>${fmtH(sbDurH)}</strong><br>
+          Max standby: <strong>${maxSB}h</strong> · §2.11.2.1
+          <br><span style="font-size:10px;color:var(--muted)">100% counts as cumulative DP · §2.11.2.2</span>
+        </div>`;
+    } else {
+      // ── Regular flight duty ──
+      const nightTag = nextDuty.night==='yes'
+        ? '<span style="color:var(--amber);font-size:10px">🌙 Night duty</span>' : '';
+      cardBody = `
+        <div class="nr-time">${nextDuty.report} · ${nextDuty.route||'—'}</div>
+        <div class="nr-sub">
+          <strong style="color:var(--amber)">⏳ ${diffH}h ${String(diffM).padStart(2,'0')}m to report</strong>
+          ${nightTag ? '<br>'+nightTag : ''}
+        </div>`;
     }
 
     el.innerHTML = `<div class="nr-box">
       <div class="nr-label">${dutyIcon} Next duty — ${fmtDate(nextDuty.date)}</div>
       <div style="margin-bottom:4px">${dutyTypeLabel}</div>
-      <div class="nr-time">${mainReport} · ${mainRoute}</div>
-      <div class="nr-sub">
-        <strong style="color:var(--amber)">⏳ ${diffH}h ${String(diffM).padStart(2,'0')}m to report</strong>
-        ${fdpLine}
-      </div>
+      ${isNextSB || hasCF ? '' : `<div style="margin-bottom:4px"><strong style="color:var(--amber)">⏳ ${diffH}h ${String(diffM).padStart(2,'0')}m to report</strong></div>`}
+      ${cardBody}
       ${legalRepStr}
     </div>`;
 
