@@ -1207,9 +1207,9 @@ function buildDutiesHTML(list, allSorted) {
           <span class="pctag ${cls==='ok'?'green':cls==='warn'?'amber':'red'}">${lbl}</span>
         </div>
         <div class="dc-data">
-          <div class="dcd"><div class="dd-k">Report</div><div class="dd-v" style="color:var(--cyan)">${dispReport}</div></div>
-          <div class="dcd"><div class="dd-k">Debrief</div><div class="dd-v">${dispDebrief}</div></div>
-          <div class="dcd"><div class="dd-k">${isStandbyCard?'Standby':'FDP'}</div><div class="dd-v" style="color:${cls==='ok'?'var(--green)':cls==='warn'?'var(--amber)':'var(--red)'}">${fmtH(dispFDP)}</div></div>
+          <div class="dcd"><div class="dd-k">Report</div><div class="dd-v" style="color:var(--cyan)">${d.convertedFlight ? (d.convertedFlight.sbOrigReport || dispReport) : dispReport}</div></div>
+          <div class="dcd"><div class="dd-k">Debrief</div><div class="dd-v">${d.convertedFlight ? (d.convertedFlight.sbOrigDebrief || dispDebrief) : dispDebrief}</div></div>
+          <div class="dcd"><div class="dd-k">${isStandbyCard?'Standby':'FDP'}</div><div class="dd-v" style="color:${cls==='ok'?'var(--green)':cls==='warn'?'var(--amber)':'var(--red)'}">${d.convertedFlight ? fmtH(d.convertedFlight.sbOrigFDP || d.convertedFlight.sbContrib || dispFDP) : fmtH(dispFDP)}</div></div>
           ${!isStandbyCard ? `
           <div class="dcd"><div class="dd-k">Block</div><div class="dd-v">${fmtHHMM(dispBlock)}</div></div>
           <div class="dcd"><div class="dd-k">Landings</div><div class="dd-v">${d.landings||'—'}</div></div>
@@ -3003,10 +3003,16 @@ function saveStandbyConvert(sbId) {
     convertedFlight: {
       route, report, debrief, debriefDate, block, landings: land, crew, night,
       flightFDP, sbContrib, totalFDP, cumulativeDP, issues, warns,
+      // Preserve original standby times for display
+      sbOrigReport: sb.report,
+      sbOrigDebrief: sb.debrief,
+      sbOrigFDP: sb.fdp,
       status: issues.length ? 'bad' : warns.length ? 'warn' : 'ok'
     },
-    // fdp = cumulativeDP so filterDays/sumDP count the full §2.11.2.2a period
+    // fdp = cumulativeDP so filterDays/sumDP count the full period
     fdp: cumulativeDP,
+    // Keep original SB debrief on the duty itself for rest calculations
+    // (rest starts after the FLIGHT debrief, not the SB debrief)
     debrief: debrief,
     debriefDate: debriefDate,
     night: night
