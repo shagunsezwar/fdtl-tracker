@@ -849,30 +849,45 @@ function calcDutyPeriodH(reportHHMM, debriefHHMM) {
 // "starts" case: FDP starts inside WOCL → reduction = 100% of encroachment (max 2h)
 // woclInfo = result of woclEncroach() — uses debrief time as window end
 // Returns { effFDP, reductionMins, math }
-function applyWOCL(maxFDP, woclInfo) {
-  if (!woclInfo || woclInfo.type === 'none') return { effFDP: maxFDP, reductionMins: 0, math: '' };
-  const em = woclInfo.encroachMins || 0;
-  let reductionMins = 0, math = '';
+function applyWOCL(maxFDP, woclInfo, sbReductionH) {
+  // First apply §2.11.2.3b home SB reduction (reduces base max before WOCL)
+  const sbRed = sbReductionH || 0;
+  const baseAfterSB = Math.max(0, maxFDP - sbRed);
 
-  if (woclInfo.type === 'starts') {
-    // FDP starts inside WOCL (0200–0600): 100% of encroachment, max 2h
-    reductionMins = Math.min(em, 120);
-    const toHM = m => m>=60 ? `${Math.floor(m/60)}h ${m%60}m` : `${m}m`;
-    math = `${em}m encroachment × 100% = ${toHM(reductionMins)} reduction (max 2h cap)`;
-  } else {
-    // FDP ends/encompasses WOCL: 50% of encroachment
-    reductionMins = Math.round(em * 0.5);
-    math = `Eng off ${woclInfo.engoffStr||''} → ${em}m past 02:00 × 50% = ${reductionMins}m reduction`;
+  if (!woclInfo || woclInfo.type === 'none') {
+    if (sbRed > 0) {
+      const effH = Math.floor(baseAfterSB), effM = Math.round((baseAfterSB-effH)*60);
+      const origH = Math.floor(maxFDP), origM = Math.round((maxFDP-origH)*60);
+      const math = `§2.11.2.3b SB reduction ${fmtH(sbRed)} → Max FDP: `+
+        `${String(origH).padStart(2,'0')}:${String(origM).padStart(2,'0')} − `+
+        `${fmtH(sbRed)} = ${String(effH).padStart(2,'0')}:${String(effM).padStart(2,'0')}`;
+      return { effFDP: +baseAfterSB.toFixed(2), reductionMins: sbRed*60, math };
+    }
+    return { effFDP: maxFDP, reductionMins: 0, math: '' };
   }
 
-  const effFDP = Math.max(0, maxFDP - reductionMins / 60);
-  // Format effFDP as HH:MM for display
+  const em = woclInfo.encroachMins || 0;
+  let woclReductionMins = 0, math = '';
+
+  if (woclInfo.type === 'starts') {
+    woclReductionMins = Math.min(em, 120);
+    const toHM = m => m>=60 ? `${Math.floor(m/60)}h ${m%60}m` : `${m}m`;
+    math = `${em}m encroachment × 100% = ${toHM(woclReductionMins)} reduction (max 2h cap)`;
+  } else {
+    woclReductionMins = Math.round(em * 0.5);
+    math = `Eng off ${woclInfo.engoffStr||''} → ${em}m past 02:00 × 50% = ${woclReductionMins}m reduction`;
+  }
+
+  // Stack: base max − SB reduction − WOCL reduction
+  const totalReductionMins = sbRed*60 + woclReductionMins;
+  const effFDP = Math.max(0, maxFDP - totalReductionMins / 60);
   const effH = Math.floor(effFDP), effM = Math.round((effFDP-effH)*60);
   const origH = Math.floor(maxFDP), origM = Math.round((maxFDP-origH)*60);
   const effStr  = String(effH).padStart(2,'0')+':'+String(effM).padStart(2,'0');
   const origStr = String(origH).padStart(2,'0')+':'+String(origM).padStart(2,'0');
-  math += ` → Max FDP: ${origStr} − ${reductionMins}m = ${effStr}`;
-  return { effFDP: +effFDP.toFixed(2), reductionMins, math };
+  if (sbRed > 0) math = `§2.11.2.3b −${fmtH(sbRed)} + ` + math;
+  math += ` → Max FDP: ${origStr} − ${Math.round(totalReductionMins)}m = ${effStr}`;
+  return { effFDP: +effFDP.toFixed(2), reductionMins: totalReductionMins, math };
 }
 
 // Add minutes to HH:MM string — rounds to nearest minute to avoid float drift
@@ -1390,29 +1405,25 @@ function buildLandingRow() {
   // Night limits (§2.6.1.4)
   const nightFDP = 10.0, nightFT = 8;
 
-  // Per-row WOCL check:
-  // - Engine-off = report + FDP (theoretical max for each row)
-  // - WOCL = 0200–0600. Encroachment = minutes engine-off falls inside 0200–0600.
-  // - "starts" (report inside WOCL): 100% reduction, max 2h
-  // - "ends" (engine-off inside WOCL): 50% of encroachment minutes
-  //
-  // For the ACTIVE row: if actual debrief is known, use actual engine-off
-  // (debrief − 30min) so the math reflects reality, not worst-case.
+  // §2.11.2.3b: if active duty is a converted home standby, get SB reduction
+  const sbReductionH = (activeDuty && activeDuty.convertedFlight &&
+    activeDuty.dtype === 'standby-home' &&
+    activeDuty.convertedFlight.sbReductionH > 0)
+    ? activeDuty.convertedFlight.sbReductionH : 0;
+
+  // Per-row WOCL check — also applies §2.11.2.3b SB reduction to max FDP
   function rowWocl(maxFDP, isActiveRow) {
     if (!rptStr) return {dispFDP: maxFDP, woclReduction: 0, math: ''};
 
     let engoffStr;
     if (isActiveRow && activeDuty && activeDuty.debrief) {
-      // Use actual engine-off from the logged duty
-      engoffStr = addMins(activeDuty.debrief, -30);
+      engoffStr = addMins(activeDuty.convertedFlight ? activeDuty.convertedFlight.debrief : activeDuty.debrief, -30);
     } else {
-      // Theoretical: report + this row's max FDP
       engoffStr = addMins(rptStr, maxFDP * 60);
     }
 
     const wi = woclEncroach(rptStr, engoffStr);
-    if (wi.type === 'none') return {dispFDP: maxFDP, woclReduction: 0, math: ''};
-    const wr = applyWOCL(maxFDP, {...wi, engoffStr});
+    const wr = applyWOCL(maxFDP, wi.type !== 'none' ? {...wi, engoffStr} : wi, sbReductionH);
     return {dispFDP: wr.effFDP, woclReduction: wr.reductionMins, math: wr.math};
   }
 
@@ -1549,8 +1560,13 @@ function getActiveDutyReportStr() {
   for (const d of sorted) {
     const repDT = getReportDT(d);
     const debDT = d.debrief ? getDebriefDT(d) : repDT;
-    // Currently in duty or upcoming
-    if (repDT && now <= debDT) return {reportStr: d.report, duty: d};
+    if (repDT && now <= debDT) {
+      // For converted home standby: FDP starts at flight report, not SB report
+      const effectiveReport = (d.dtype === 'standby-home' && d.convertedFlight)
+        ? d.convertedFlight.report
+        : d.report;
+      return {reportStr: effectiveReport, duty: d};
+    }
   }
   return {reportStr: null, duty: null};
 }
@@ -1836,8 +1852,12 @@ function renderNextReport() {
           <br>FDP starts from SB report <strong>${currentDuty.report}</strong> · §2.11.2.2a
         </div>`;
       } else {
-        const sbH2 = currentDuty.fdp || 0;
-        const contrib = sbH2 > 6 ? `50% of ${fmtH(sbH2)} = ${fmtH(sbH2*0.5)} added to FDP (§2.11.2.3b)` : `No FDP contribution (≤6h · §2.11.2.3a)`;
+        const cf2 = currentDuty.convertedFlight;
+        const sbRed2 = cf2 ? cf2.sbReductionH : 0;
+        const sbH2 = currentDuty.convertedFlight?.sbOrigFDP || currentDuty.fdp || 0;
+        const contrib = sbRed2 > 0
+          ? `Max FDP reduced by ${fmtH(sbRed2)} (50% of SB served · §2.11.2.3b)`
+          : `No FDP reduction (flight within 6h of SB · §2.11.2.3a)`;
         return `<div style="margin-bottom:8px;padding:7px 10px;background:rgba(0,180,255,.08);
           border-left:3px solid var(--cyan);border-radius:0 6px 6px 0;font-size:10px;line-height:1.6">
           <span style="color:var(--cyan);font-weight:700">🏠 Home/Hotel Standby → Flight</span><br>
@@ -1936,12 +1956,12 @@ function renderNextReport() {
       const cfL = getLimits(cf.landings||1, cf.night||'no', cf.crew||'2p');
       const cfFdpExpiry = addMins(nextDuty.report, cf.totalFDP * 60);
       const isAptConv = nextDuty.dtype === 'standby-apt';
-      const sbH2 = nextDuty.fdp || 0;
+      const sbH2 = cf.sbOrigFDP || nextDuty.fdp || 0;
       const sbBannerNote = isAptConv
         ? `FDP starts from SB report <strong>${nextDuty.report}</strong> · §2.11.2.2a`
-        : (sbH2 > 6
-          ? `50% of ${fmtH(sbH2)} = ${fmtH(sbH2*0.5)} added to Flight FDP · §2.11.2.3b`
-          : `SB ≤6h: no FDP contribution · §2.11.2.3a`);
+        : (cf.sbReductionH > 0
+          ? `Max FDP reduced by ${fmtH(cf.sbReductionH)} (50% of SB served · §2.11.2.3b)`
+          : `Flight within 6h of SB start · no FDP reduction (§2.11.2.3a)`);
       const sbBannerColor = isAptConv ? 'rgba(245,166,35,.1)' : 'rgba(0,180,255,.08)';
       const sbBannerBorder = isAptConv ? 'var(--amber)' : 'var(--cyan)';
       const sbBannerLabel = isAptConv ? '📍 Airport Standby → Flight' : '🏠 Home/Hotel Standby → Flight';
@@ -2920,15 +2940,17 @@ function openStandbyConvertModal(id) {
 
       const flightFDP = calcFDPh(r, db);
       if (timeToFlightH < 6) {
-        // §2.11.2.3a: flight within first 6h — no SB contribution to FDP
+        // §2.11.2.3a: no SB contribution, no reduction
         sbContrib = 0;
-        note = `Home SB: flight starts ${fmtH(timeToFlightH)} after SB (&lt;6h) → no FDP contribution (§2.11.2.3a) · Flight FDP: ${fmtH(flightFDP)}`;
+        note = `Home SB: flight starts ${fmtH(timeToFlightH)} after SB (&lt;6h) → no FDP contribution, no reduction (§2.11.2.3a) · Flight FDP: ${fmtH(flightFDP)}`;
+        totalFDP = flightFDP;
       } else {
-        // §2.11.2.3b: flight at/after 6h — Max FDP reduced by 50% of SB time
-        sbContrib = sbH * 0.5;
-        note = `Home SB: flight starts ${fmtH(timeToFlightH)} after SB (≥6h) → Max FDP reduced by 50% of ${fmtH(sbH)} = ${fmtH(sbContrib)} (§2.11.2.3b) · Flight FDP: ${fmtH(flightFDP)}`;
+        // §2.11.2.3b: Max FDP reduced by 50% of SB time SERVED (SB start → flight report)
+        const sbRed = timeToFlightH * 0.5;
+        sbContrib = sbRed;
+        note = `Home SB: flight starts ${fmtH(timeToFlightH)} after SB (≥6h) → Max FDP reduced by 50% of ${fmtH(timeToFlightH)} served = ${fmtH(sbRed)} (§2.11.2.3b)`;
+        totalFDP = flightFDP;
       }
-      totalFDP = flightFDP + sbContrib;
     }
 
     const night = isNightDuty(isAirport ? sb.report : r, db) ? '🌙 Night duty' : '';
@@ -2977,7 +2999,7 @@ function saveStandbyConvert(sbId) {
   const isAirport = sb.dtype === 'standby-apt';
   const sbH       = sb.fdp || 0;
 
-  let totalFDP, sbContrib, flightFDP;
+  let totalFDP, sbContrib, flightFDP, sbReductionH = 0;
   flightFDP = calcFDPh(report, debrief);
 
   if (isAirport) {
@@ -2995,11 +3017,13 @@ function saveStandbyConvert(sbId) {
     if (timeToFlightH < 6) {
       // §2.11.2.3a: no contribution — flight within first 6h of SB
       sbContrib = 0;
+      sbReductionH = 0;
     } else {
-      // §2.11.2.3b: Max FDP reduced by 50% of total SB time
-      sbContrib = sbH * 0.5;
+      // §2.11.2.3b: Max FDP reduced by 50% of SB time SERVED (SB start → flight report)
+      sbContrib = 0;
+      sbReductionH = timeToFlightH * 0.5;
     }
-    totalFDP = flightFDP + sbContrib;
+    totalFDP = flightFDP; // actual FDP = just the flight, SB doesn't add to it
   }
   totalFDP = +totalFDP.toFixed(2);
 
@@ -3032,7 +3056,7 @@ function saveStandbyConvert(sbId) {
     ...sb,
     convertedFlight: {
       route, report, debrief, debriefDate, block, landings: land, crew, night,
-      flightFDP, sbContrib, totalFDP, cumulativeDP, issues, warns,
+      flightFDP, sbContrib, sbReductionH, totalFDP, cumulativeDP, issues, warns,
       // Preserve original standby times for display
       sbOrigReport: sb.report,
       sbOrigDebrief: sb.debrief,
