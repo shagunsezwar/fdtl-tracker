@@ -976,16 +976,18 @@ const sumFT = ds => +ds.reduce((s,d) => s + (d.block || (d.convertedFlight && d.
 // Flight duty: FDP = DP for cumulative purposes
 const sumDP = ds => +ds.reduce((s,d) => {
   if (d.dtype === 'standby-apt') {
-    // 100% of airport standby period counts as DP (§2.11.2.2)
-    // If converted, d.fdp = totalFDP (sbH + flightFDP) — already correct
-    // If not converted, d.fdp = standby period — also correct
+    // §2.11.2.2: 100% of airport SB counts as DP (converted or not)
     return s + (d.fdp || 0);
   }
   if (d.dtype === 'standby-home') {
-    // Home standby full period counts as DP
-    return s + (d.fdp || 0);
+    if (d.convertedFlight) {
+      // §2.11.2.3a/b converted: fdp = cumulativeDP (flight FDP + sbContrib)
+      return s + (d.fdp || 0);
+    } else {
+      // §2.11.2.3 pure home standby (no flight): 25% of SB time counts as DP
+      return s + (d.fdp || 0) * 0.25;
+    }
   }
-  // Flight duties: FDP counts as DP
   return s + (d.fdp || 0);
 }, 0).toFixed(1);
 
@@ -1243,7 +1245,9 @@ function buildDutiesHTML(list, allSorted) {
           border-left:3px solid var(--cyan);border-radius:0 6px 6px 0;font-size:10px;
           color:var(--muted);line-height:1.6">
           <span style="color:var(--cyan);font-weight:700">§2.11.2.3 Home/Hotel Standby</span><br>
-          ≤6h: no FDP contribution · &gt;6h: 50% added to FDP if flight assigned
+          No flight: 25% of SB time counts as cumulative DP<br>
+          Flight &lt;6h after SB start: no FDP contribution (§2.11.2.3a)<br>
+          Flight ≥6h after SB start: Max FDP reduced by 50% of SB time (§2.11.2.3b)
         </div>` : ''}
         ${d.convertedFlight ? (() => {
           const cf = d.convertedFlight;
@@ -2897,25 +2901,32 @@ function openStandbyConvertModal(id) {
     const db = document.getElementById('sbc-debrief').value;
     if (!r || !db) return;
     const isAirport = sb.dtype === 'standby-apt';
-    const sbH = sb.fdp || 0;  // standby duration (report → debrief of standby)
+    const sbH = sb.fdp || 0;  // total standby duration
 
-    let totalFDP, note;
+    let totalFDP, sbContrib, note;
     if (isAirport) {
-      // §2.11.2.2a — FDP starts at ORIGINAL standby report time, ends at engine-off
-      // Engine-off = flight debrief − 30min
-      // So totalFDP = calcFDPh(sb.report, db) — from SB report to flight eng-off
-      totalFDP = calcFDPh(sb.report, db);
+      // §2.11.2.2a — FDP = SB report → engine-off (one continuous window)
+      totalFDP  = calcFDPh(sb.report, db);
+      sbContrib = +(totalFDP - calcFDPh(r, db)).toFixed(2);
       note = `Airport SB: FDP from SB report (${sb.report}) → eng-off · ${fmtH(totalFDP)} total (§2.11.2.2a)`;
     } else {
-      // Home/hotel standby — flight FDP only, then add contribution
+      // §2.11.2.3 Home/Hotel standby
+      // Threshold = time from SB start to flight report
+      const [sh,sm] = sb.report.split(':').map(Number);
+      const [rh,rm] = r.split(':').map(Number);
+      let timeToFlight = (rh*60+rm) - (sh*60+sm);
+      if (timeToFlight < 0) timeToFlight += 1440; // midnight wrap
+      const timeToFlightH = timeToFlight / 60;
+
       const flightFDP = calcFDPh(r, db);
-      let sbContrib = 0;
-      if (sbH <= 6) {
+      if (timeToFlightH < 6) {
+        // §2.11.2.3a: flight within first 6h — no SB contribution to FDP
         sbContrib = 0;
-        note = `Home SB ≤6h: no FDP contribution (§2.11.2.3a) · Flight FDP: ${fmtH(flightFDP)}`;
+        note = `Home SB: flight starts ${fmtH(timeToFlightH)} after SB (&lt;6h) → no FDP contribution (§2.11.2.3a) · Flight FDP: ${fmtH(flightFDP)}`;
       } else {
+        // §2.11.2.3b: flight at/after 6h — Max FDP reduced by 50% of SB time
         sbContrib = sbH * 0.5;
-        note = `Home SB >6h: 50% of ${fmtH(sbH)} = ${fmtH(sbContrib)} added to Flight FDP ${fmtH(flightFDP)} (§2.11.2.3b)`;
+        note = `Home SB: flight starts ${fmtH(timeToFlightH)} after SB (≥6h) → Max FDP reduced by 50% of ${fmtH(sbH)} = ${fmtH(sbContrib)} (§2.11.2.3b) · Flight FDP: ${fmtH(flightFDP)}`;
       }
       totalFDP = flightFDP + sbContrib;
     }
@@ -2966,22 +2977,36 @@ function saveStandbyConvert(sbId) {
   const isAirport = sb.dtype === 'standby-apt';
   const sbH       = sb.fdp || 0;
 
-  // §2.11.2.2a — Airport standby: FDP = sb.report → engine-off (one continuous window)
-  // §2.11.2.3  — Home standby: flightFDP + 0% or 50% of sbH
   let totalFDP, sbContrib, flightFDP;
-  flightFDP = calcFDPh(report, debrief);   // flight report → engine-off
+  flightFDP = calcFDPh(report, debrief);
+
   if (isAirport) {
-    totalFDP  = calcFDPh(sb.report, debrief); // SB report → engine-off = true FDP
-    sbContrib = +(totalFDP - flightFDP).toFixed(2); // informational only
+    // §2.11.2.2a: FDP = SB report → engine-off
+    totalFDP  = calcFDPh(sb.report, debrief);
+    sbContrib = +(totalFDP - flightFDP).toFixed(2);
   } else {
-    sbContrib = sbH > 6 ? sbH * 0.5 : 0;
-    totalFDP  = flightFDP + sbContrib;
+    // §2.11.2.3: threshold = time from SB start to flight report
+    const [sh,sm] = sb.report.split(':').map(Number);
+    const [rh,rm] = report.split(':').map(Number);
+    let timeToFlight = (rh*60+rm) - (sh*60+sm);
+    if (timeToFlight < 0) timeToFlight += 1440;
+    const timeToFlightH = timeToFlight / 60;
+
+    if (timeToFlightH < 6) {
+      // §2.11.2.3a: no contribution — flight within first 6h of SB
+      sbContrib = 0;
+    } else {
+      // §2.11.2.3b: Max FDP reduced by 50% of total SB time
+      sbContrib = sbH * 0.5;
+    }
+    totalFDP = flightFDP + sbContrib;
   }
   totalFDP = +totalFDP.toFixed(2);
 
   // Cumulative DP:
-  // Airport SB → flight: entire window from SB report = totalFDP (§2.11.2.2a)
-  // Home SB → flight: flight FDP + SB contribution (§2.11.2.3)
+  // Airport SB → flight: totalFDP (§2.11.2.2a — one continuous window)
+  // Home SB → flight §2.11.2.3a (no contrib): only flight FDP counts
+  // Home SB → flight §2.11.2.3b (50% contrib): flight FDP + sbContrib
   const cumulativeDP = isAirport ? totalFDP : +(flightFDP + sbContrib).toFixed(2);
 
   // Night detection — for airport SB use SB report as window start
