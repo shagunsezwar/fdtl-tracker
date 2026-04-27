@@ -79,12 +79,14 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--m
 #nav{
   position:fixed;bottom:0;left:0;right:0;
   background:var(--panel);border-top:1px solid var(--edge);
-  display:flex;padding-bottom:var(--safe-b);z-index:100
+  display:flex;overflow-x:auto;padding-bottom:var(--safe-b);z-index:100;
+  scrollbar-width:none;
 }
+#nav::-webkit-scrollbar{display:none}
 .nb{
-  flex:1;display:flex;flex-direction:column;align-items:center;
-  padding:8px 2px;border:none;background:none;color:var(--muted);
-  font-size:9px;font-family:var(--mono);cursor:pointer;gap:3px;
+  flex:0 0 auto;min-width:52px;display:flex;flex-direction:column;align-items:center;
+  padding:8px 4px;border:none;background:none;color:var(--muted);
+  font-size:8px;font-family:var(--mono);cursor:pointer;gap:3px;
   transition:color .15s;letter-spacing:.5px;text-transform:uppercase
 }
 .nb .ni{font-size:18px;line-height:1}
@@ -452,16 +454,6 @@ textarea{resize:none;min-height:160px;font-size:12px;line-height:1.7}
     <div id="ldg-row"><!-- Rendered by JS --></div>
   </div>
 
-  <!-- CUMULATIVE -->
-  <div class="pcard">
-    <div class="pchead">Cumulative limits <span class="pctag">§2.8</span></div>
-    <div class="slbl">Flight time</div>
-    <div id="cum-ft"></div>
-    <div class="div"></div>
-    <div class="slbl">Duty period</div>
-    <div id="cum-dp"></div>
-  </div>
-
 
 
 </div><!-- end dash -->
@@ -641,6 +633,26 @@ Debriefing time: 0220"></textarea>
 </div>
 
 <!-- ═══════════════════════════════════
+     PAGE 6 — CUMULATIVE LIMITS
+═══════════════════════════════════ -->
+<div id="page-cumul" class="page">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+    <div class="slbl" style="margin:0">Cumulative Limits</div>
+    <span class="pctag">§2.8</span>
+  </div>
+
+  <div class="pcard" style="margin-bottom:12px">
+    <div class="slbl">Flight Time</div>
+    <div id="cum-ft-page"></div>
+  </div>
+
+  <div class="pcard">
+    <div class="slbl">Duty Period</div>
+    <div id="cum-dp-page"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════
      PAGE 5 — GUIDE
 ═══════════════════════════════════ -->
 <div id="page-guide" class="page">
@@ -726,6 +738,7 @@ Debriefing time: 0220"></textarea>
   <button class="nb" onclick="goPage('roster',this)"><span class="ni">📋</span>Roster</button>
   <button class="nb" onclick="goPage('log',this)"><span class="ni">✏️</span>Log</button>
   <button class="nb" onclick="goPage('duties-full',this)"><span class="ni">🗂</span>Duties</button>
+  <button class="nb" onclick="goPage('cumul',this)"><span class="ni">📈</span>Limits</button>
   <button class="nb" onclick="goPage('guide',this)"><span class="ni">📖</span>Guide</button>
 </nav>
 </div><!-- app -->
@@ -1015,6 +1028,7 @@ function goPage(name, btn) {
   btn.classList.add('on');
   document.getElementById('scroller').scrollTop=0;
   if (name==='dash') { renderDash(); startDashClock(); }
+  else if (name==='cumul') { renderCumul(); }
   else { if(_dashTimer){clearInterval(_dashTimer);_dashTimer=null;} }
 
   if (name==='duties-full') renderDutiesFull();
@@ -1837,8 +1851,6 @@ function renderNextReport() {
       effFDP  = woclResult.effFDP;
       hasWOCL = woclInfo.type !== 'none';
     }
-    const maxFdpExpiry = addMins(cf ? currentDuty.report : currentDuty.report, effFDP * 60);
-
     selLandings = (cf ? cf.landings : currentDuty.landings) || 2;
 
     const sbBanner = hasFlight ? (() => {
@@ -1875,8 +1887,7 @@ function renderNextReport() {
       <div class="nr-sub">
         Report: <strong>${flightReport}</strong> · Debrief: <strong>${flightDebrief}</strong><br>
         Planned eng-off: <strong style="color:${expiredFDP?'var(--red)':'var(--cyan)'}">${plannedEngOff}</strong>
-        ${hasWOCL ? ' <span style="font-size:10px;color:var(--amber);background:rgba(255,170,0,.15);padding:1px 6px;border-radius:4px;vertical-align:middle">WOCL reduced</span>' : ''}
-        · Reg max FDP expires: <strong>${maxFdpExpiry}</strong><br>
+        ${hasWOCL ? ' <span style="font-size:10px;color:var(--amber);background:rgba(255,170,0,.15);padding:1px 6px;border-radius:4px;vertical-align:middle">WOCL reduced</span>' : ''}<br>
         ${!expiredFDP
           ? `⏱ <strong style="color:${remH<1?'var(--red)':remH<2?'var(--amber)':'var(--green)'}">${remH}h ${String(remM).padStart(2,'0')}m to debrief</strong>`
           : '<strong style="color:var(--red)">⛔ DEBRIEF TIME REACHED</strong>'}
@@ -2059,29 +2070,25 @@ function renderNextReport() {
 }
 
 function renderCumulative() {
-  const ftEl = document.getElementById('cum-ft');
-  const dpEl = document.getElementById('cum-dp');
-  ftEl.innerHTML = CUMUL.map(p=>{
-    const v=sumFT(filterDays(p.days)), pct=v/p.maxFT, cls=bClass(pct);
+  const html = (getter, maxKey) => CUMUL.map(p=>{
+    const v = getter(p.days), pct = v/p[maxKey], cls = bClass(pct);
     return `<div class="prog-block">
       <div class="prog-head">
         <span class="ph-name">${p.label}</span>
-        <span class="ph-val" style="color:${bColor(pct)}">${v.toFixed(1)} / ${p.maxFT}h</span>
+        <span class="ph-val" style="color:${bColor(pct)}">${v.toFixed(1)} / ${p[maxKey]}h</span>
       </div>
       <div class="prog-track"><div class="prog-fill ${cls}" style="width:${Math.min(pct*100,100).toFixed(1)}%"></div></div>
     </div>`;
   }).join('');
-  dpEl.innerHTML = CUMUL.map(p=>{
-    const v=sumDP(filterDays(p.days)), pct=v/p.maxDP, cls=bClass(pct);
-    return `<div class="prog-block">
-      <div class="prog-head">
-        <span class="ph-name">${p.label}</span>
-        <span class="ph-val" style="color:${bColor(pct)}">${v.toFixed(1)} / ${p.maxDP}h</span>
-      </div>
-      <div class="prog-track"><div class="prog-fill ${cls}" style="width:${Math.min(pct*100,100).toFixed(1)}%"></div></div>
-    </div>`;
-  }).join('');
+  const ftHtml = html(d => sumFT(filterDays(d)), 'maxFT');
+  const dpHtml = html(d => sumDP(filterDays(d)), 'maxDP');
+  // Write to dedicated Limits page
+  const ftPage = document.getElementById('cum-ft-page');
+  const dpPage = document.getElementById('cum-dp-page');
+  if (ftPage) ftPage.innerHTML = ftHtml;
+  if (dpPage) dpPage.innerHTML = dpHtml;
 }
+function renderCumul() { renderCumulative(); }
 
 function renderRestPeriods() {
   const card = document.getElementById('rest-card');
