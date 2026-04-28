@@ -640,14 +640,36 @@ Debriefing time: 0220"></textarea>
     <span class="pctag">§2.8</span>
   </div>
 
-  <div class="pcard" style="margin-bottom:12px">
-    <div class="slbl">Flight Time</div>
-    <div id="cum-ft-page"></div>
+  <!-- TILL DATE — only completed duties -->
+  <div class="pcard" style="margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <span style="font-size:14px">✅</span>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--text);letter-spacing:.5px">TILL DATE</div>
+        <div style="font-size:9px;color:var(--muted)">Completed duties only · updates as each duty ends</div>
+      </div>
+    </div>
+    <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Flight Time</div>
+    <div id="cum-ft-done"></div>
+    <div class="div" style="margin:10px 0"></div>
+    <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Duty Period</div>
+    <div id="cum-dp-done"></div>
   </div>
 
+  <!-- PLANNED — all logged duties including future -->
   <div class="pcard">
-    <div class="slbl">Duty Period</div>
-    <div id="cum-dp-page"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <span style="font-size:14px">📋</span>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--text);letter-spacing:.5px">PLANNED</div>
+        <div style="font-size:9px;color:var(--muted)">All logged duties including upcoming</div>
+      </div>
+    </div>
+    <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Flight Time</div>
+    <div id="cum-ft-plan"></div>
+    <div class="div" style="margin:10px 0"></div>
+    <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Duty Period</div>
+    <div id="cum-dp-plan"></div>
   </div>
 </div>
 
@@ -2091,8 +2113,24 @@ function renderNextReport() {
 }
 
 function renderCumulative() {
-  const html = (getter, maxKey) => CUMUL.map(p=>{
-    const v = getter(p.days), pct = v/p[maxKey], cls = bClass(pct);
+  const nowReal = new Date(); // real epoch for comparing with getDebriefDT results
+
+  // filterDays already returns flight+standby duties within n days
+  // For "till date": only duties whose debrief has passed by now
+  function filterDaysDone(n) {
+    const ist = nowIST();
+    const cut = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()) - n*86400000;
+    return duties.filter(d => {
+      const isRelevant = ['flight','flight-deadhead','standby-apt','standby-home'].includes(d.dtype);
+      if (!isRelevant) return false;
+      if (new Date(d.date+'T00:00:00Z').getTime() < cut) return false;
+      const debDT = getDebriefDT(d);
+      return debDT && debDT <= nowReal; // only completed duties
+    });
+  }
+
+  const progHTML = (getter, maxKey) => CUMUL.map(p => {
+    const v = getter(p.days), pct = v / p[maxKey], cls = bClass(pct);
     return `<div class="prog-block">
       <div class="prog-head">
         <span class="ph-name">${p.label}</span>
@@ -2101,13 +2139,19 @@ function renderCumulative() {
       <div class="prog-track"><div class="prog-fill ${cls}" style="width:${Math.min(pct*100,100).toFixed(1)}%"></div></div>
     </div>`;
   }).join('');
-  const ftHtml = html(d => sumFT(filterDays(d)), 'maxFT');
-  const dpHtml = html(d => sumDP(filterDays(d)), 'maxDP');
-  // Write to dedicated Limits page
-  const ftPage = document.getElementById('cum-ft-page');
-  const dpPage = document.getElementById('cum-dp-page');
-  if (ftPage) ftPage.innerHTML = ftHtml;
-  if (dpPage) dpPage.innerHTML = dpHtml;
+
+  // Till date (completed duties only)
+  const el = id => document.getElementById(id);
+  if (el('cum-ft-done')) el('cum-ft-done').innerHTML = progHTML(d => sumFT(filterDaysDone(d)), 'maxFT');
+  if (el('cum-dp-done')) el('cum-dp-done').innerHTML = progHTML(d => sumDP(filterDaysDone(d)), 'maxDP');
+
+  // Planned (all logged duties)
+  if (el('cum-ft-plan')) el('cum-ft-plan').innerHTML = progHTML(d => sumFT(filterDays(d)), 'maxFT');
+  if (el('cum-dp-plan')) el('cum-dp-plan').innerHTML = progHTML(d => sumDP(filterDays(d)), 'maxDP');
+
+  // Legacy element IDs (kept for compatibility)
+  if (el('cum-ft-page')) el('cum-ft-page').innerHTML = el('cum-ft-plan')?.innerHTML || '';
+  if (el('cum-dp-page')) el('cum-dp-page').innerHTML = el('cum-dp-plan')?.innerHTML || '';
 }
 function renderCumul() { renderCumulative(); }
 
