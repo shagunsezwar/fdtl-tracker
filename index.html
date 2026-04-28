@@ -79,13 +79,12 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--m
 #nav{
   position:fixed;bottom:0;left:0;right:0;
   background:var(--panel);border-top:1px solid var(--edge);
-  display:flex;overflow-x:auto;padding-bottom:var(--safe-b);z-index:100;
-  scrollbar-width:none;
+  display:flex;justify-content:space-around;
+  padding-bottom:var(--safe-b);z-index:100;
 }
-#nav::-webkit-scrollbar{display:none}
 .nb{
-  flex:0 0 auto;min-width:52px;display:flex;flex-direction:column;align-items:center;
-  padding:8px 4px;border:none;background:none;color:var(--muted);
+  flex:1;display:flex;flex-direction:column;align-items:center;
+  padding:8px 2px;border:none;background:none;color:var(--muted);
   font-size:8px;font-family:var(--mono);cursor:pointer;gap:3px;
   transition:color .15s;letter-spacing:.5px;text-transform:uppercase
 }
@@ -1169,19 +1168,25 @@ function buildDutiesHTML(list, allSorted) {
       const cRepDT = getReportDT(d);
 
       // ── Actual rest = time between rest start and rest end ──
-      // Rest STARTS: prev debrief + 45min travel home
-      // Rest ENDS:   next report  − 45min travel to airport
-      const restStartDT = new Date(pDebDT.getTime() + 45 * 60000);
+      // Rest STARTS:
+      // - Home/Hotel standby ends → immediately (already home, no debrief, no travel)
+      // - Airport standby ends    → +45min travel home (no debrief)
+      // - Flight duty ends        → already accounted via getDebriefDT (+30min debrief) + 45min travel
+      const prevIsHomeSB    = prev.dtype === 'standby-home';
+      const prevIsAptSB     = prev.dtype === 'standby-apt';
+      const travelHomeMins  = prevIsHomeSB ? 0 : 45; // airport SB or flight: 45min travel
+      // For flight duties, getDebriefDT already returns debrief time (eng-off + 30min)
+      // For standby, getDebriefDT returns end of standby period (no debrief added)
+      const restStartDT = new Date(pDebDT.getTime() + travelHomeMins * 60000);
       const restEndDT   = new Date(cRepDT.getTime() - 45 * 60000);
       restH = +((restEndDT - restStartDT) / 3600000).toFixed(2);
 
-      // Min required = 12h (§2.10.1) + 30min penalty (§2.10.5)
       const penaltyMins = penalty ? 30 : 0;
-      minR = 12;
+      minR  = 12;
       restOk = restH >= (minR + penaltyMins / 60);
 
-      // Earliest legal report = debrief + 45min travel + 12h rest + 30min penalty + 45min travel
-      earliestLegalDT = new Date(pDebDT.getTime() + (45 + minR*60 + penaltyMins + 45) * 60000);
+      // Earliest legal report = restStart + 12h + 30min penalty + 45min travel to airport
+      earliestLegalDT = new Date(restStartDT.getTime() + (minR*60 + penaltyMins + 45) * 60000);
     }
 
     // Rest row shown ABOVE the duty card
@@ -1195,10 +1200,18 @@ function buildDutiesHTML(list, allSorted) {
 
       // Format rest window times for display
       const pDebDT2 = getDebriefDT(prev);
-      const rStart  = new Date(pDebDT2.getTime() + 45*60000);
-      const rEnd    = new Date(repDT.getTime()   - 45*60000);  // fix: use repDT not cRepDT
+      const prevIsHomeSB2  = prev.dtype === 'standby-home';
+      const prevIsAptSB2   = prev.dtype === 'standby-apt';
+      const travelHomeMins2 = prevIsHomeSB2 ? 0 : 45;
+      const rStart  = new Date(pDebDT2.getTime() + travelHomeMins2 * 60000);
+      const rEnd    = new Date(repDT.getTime() - 45*60000);
       const fmt2    = dt => fmtAsIST(dt);
       const elStr   = earliestLegalDT ? fmt2(earliestLegalDT) : '—';
+      const startLabel = prevIsHomeSB2
+        ? 'Rest starts immediately (home/hotel standby ends)'
+        : prevIsAptSB2
+          ? '+45min travel → Rest starts (airport standby ends)'
+          : '+45min travel → Rest starts (after debrief)';
 
       html += `<div style="
         display:flex;align-items:flex-start;gap:10px;
@@ -1213,7 +1226,7 @@ function buildDutiesHTML(list, allSorted) {
             <span style="font-size:9px;font-weight:400;color:var(--muted);margin-left:4px">(min 12h${penalty?'+30m':''} · §2.10.1${penalty?' + §2.10.5':''})</span>
           </div>
           <div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.8">
-            Starts: ${fmt2(rStart)} → Ends: ${fmt2(rEnd)}<br>
+            ${startLabel}: <strong>${fmt2(rStart)}</strong> → Ends: ${fmt2(rEnd)}<br>
             Earliest legal report: <strong style="color:${legalOk?'var(--green)':'var(--red)'}">${elStr}</strong>
             ${penalty?' <span style="color:var(--amber)">+30m §2.10.5</span>':''}
             <br>${ok?'✓ Compliant':'⛔ '+(restOk?'Reported before earliest legal time':'Rest below minimum')}
@@ -1724,14 +1737,14 @@ function getReportDT(duty) {
 function calcNextReportDT(lastDuty, travelPenalty) {
   if (!lastDuty || !lastDuty.debrief) return null;
   // Use getDebriefDT to correctly handle midnight crossover
-  const debriefDT = getDebriefDT(lastDuty);
+  const debriefDT     = getDebriefDT(lastDuty);
   if (!debriefDT) return null;
-  // §2.10.1: min rest = 12h always
-  const minRestH = 12;
-  // §2.10.5: +30 min penalty (default always applied)
-  const penaltyMins = travelPenalty !== false ? 30 : 0;
-  const travelHome    = 45;
+  const minRestH      = 12;
+  const penaltyMins   = travelPenalty !== false ? 30 : 0;
+  const isLastHomeSB  = lastDuty.dtype === 'standby-home';
+  const travelHome    = isLastHomeSB ? 0 : 45; // home SB: no travel; apt SB or flight: 45min
   const travelAirport = 45;
+  // rest starts at debriefDT + travelHome, then 12h + penalty, then 45min to airport
   const totalMins = travelHome + (minRestH * 60) + penaltyMins + travelAirport;
   return new Date(debriefDT.getTime() + totalMins * 60000);
 }
@@ -1912,18 +1925,20 @@ function renderNextReport() {
     // Also show next legal report (from last completed duty)
     let legalRepStr = '';
     if (prevDuty && prevDuty.debrief) {
-      const penalty2  = prevDuty.travelPenalty !== false; // default true
-      const pDebDT2   = getDebriefDT(prevDuty);
-      const penMins2  = penalty2 ? 30 : 0;
-      const minR2     = 12; // §2.10.1 always 12h minimum
-      const rStart2   = new Date(pDebDT2.getTime() + 45 * 60000);
-      const rEnd2     = new Date(repDT.getTime()   - 45 * 60000);
-      const actRest2  = +((rEnd2 - rStart2) / 3600000).toFixed(2);
-      const arHH2     = Math.floor(Math.max(0, actRest2));
-      const arMM2     = Math.round((Math.max(0, actRest2) - arHH2) * 60);
-      const restOk2   = actRest2 >= (minR2 + penMins2/60);
-      const legalDT2  = new Date(pDebDT2.getTime() + (45 + minR2*60 + penMins2 + 45)*60000);
-      const legalOk2  = repDT >= legalDT2;
+      const penalty2      = prevDuty.travelPenalty !== false;
+      const pDebDT2       = getDebriefDT(prevDuty);
+      const penMins2      = penalty2 ? 30 : 0;
+      const minR2         = 12;
+      const prevIsHomeSB2 = prevDuty.dtype === 'standby-home';
+      const travelHome2   = prevIsHomeSB2 ? 0 : 45;
+      const rStart2       = new Date(pDebDT2.getTime() + travelHome2 * 60000);
+      const rEnd2         = new Date(repDT.getTime() - 45 * 60000);
+      const actRest2      = +((rEnd2 - rStart2) / 3600000).toFixed(2);
+      const arHH2         = Math.floor(Math.max(0, actRest2));
+      const arMM2         = Math.round((Math.max(0, actRest2) - arHH2) * 60);
+      const restOk2       = actRest2 >= (minR2 + penMins2/60);
+      const legalDT2      = new Date(rStart2.getTime() + (minR2*60 + penMins2 + 45)*60000);
+      const legalOk2      = repDT >= legalDT2;
       const lStr2     = fmtAsISTtime(legalDT2) + ' · ' + fmtAsIST(legalDT2).slice(6);
       legalRepStr = `<div style="margin-top:8px;padding:8px 10px;background:${(restOk2&&legalOk2)?'var(--green-dim)':'var(--red-dim)'};border-radius:7px;border:1px solid ${(restOk2&&legalOk2)?'rgba(0,230,118,.25)':'rgba(255,77,77,.25)'}">
         <div style="font-size:11px;font-weight:700;color:${(restOk2&&legalOk2)?'var(--green)':'var(--red)'}">
@@ -2042,17 +2057,23 @@ function renderNextReport() {
   const isLegal = diffMs <= 0;
   const totalMins = Math.max(0, Math.ceil(diffMs/60000));
   const cdH = Math.floor(totalMins/60), cdM = totalMins%60;
-  const minR = 12; // §2.10.1 always 12h
+  const minR = 12;
   const penaltyMins = penalty ? 30 : 0;
-  const debriefDT = getDebriefDT(last);
-
-  // Show breakdown: debrief → +45min → rest starts → 12h+30m rest → rest ends → +45min → report
+  const debriefDT     = getDebriefDT(last);
   const debTimeStr    = fmtAsIST(debriefDT);
-  const restStartDT3  = new Date(debriefDT.getTime() + 45*60000);
-  const restEndDT3    = new Date(debriefDT.getTime() + (45 + minR*60 + penaltyMins)*60000);
+  const isLastHomeSB3 = last.dtype === 'standby-home';
+  const isLastAptSB3  = last.dtype === 'standby-apt';
+  const travelHome3   = isLastHomeSB3 ? 0 : 45;
+  const restStartDT3  = new Date(debriefDT.getTime() + travelHome3*60000);
+  const restEndDT3    = new Date(restStartDT3.getTime() + (minR*60 + penaltyMins)*60000);
   const restStartStr  = fmtAsISTtime(restStartDT3);
   const restEndStr    = fmtAsIST(restEndDT3);
   const nextRepStr    = fmtAsISTtime(nextRepDT) + ' · ' + fmtAsIST(nextRepDT).slice(6);
+  const startLine     = isLastHomeSB3
+    ? `Rest starts immediately: ${restStartStr} (home/hotel standby ends)`
+    : isLastAptSB3
+      ? `+45min travel → Rest starts: ${restStartStr} (airport standby ends)`
+      : `+45min travel → Rest starts: ${restStartStr}`;
   el.innerHTML=`<div class="nr-box" style="${isLegal?'border-color:rgba(0,230,118,.35)':''}">
     <div class="nr-label">🕐 Earliest legal reporting time</div>
     <div class="nr-time">${nextRepStr}</div>
@@ -2061,7 +2082,7 @@ function renderNextReport() {
       <br>
       <span style="font-size:10px;color:var(--muted);line-height:1.8">
         Debrief: ${debTimeStr}<br>
-        +45min travel → Rest starts: ${restStartStr}<br>
+        ${startLine}<br>
         Rest ends: ${restEndStr} (12h${penalty?'+30m':''} · §2.10.1${penalty?' + §2.10.5':''})<br>
         +45min travel → Report: ${nextRepStr}
       </span>
