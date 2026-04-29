@@ -2328,13 +2328,19 @@ function removeRosterImage(i) {
 
 // ── AI Scan ──
 async function scanRosterImages() {
+  const statusEl  = document.getElementById('roster-ai-status');
+  const resultsEl = document.getElementById('roster-ai-results');
+  const btn       = document.getElementById('roster-scan-btn');
+  const month     = document.getElementById('ai-month').value;
+  const rtype     = document.getElementById('ai-rtype').value;
+
   if (!_rosterImages.length) { alert('Please upload at least one screenshot.'); return; }
-  const month = document.getElementById('ai-month').value;
   if (!month) {
     alert('Please select the month and year for this roster before scanning.\n\nThis is needed to assign correct dates to each duty.');
     document.getElementById('ai-month').focus();
     return;
   }
+
   btn.disabled = true; btn.textContent = '⏳ Scanning…';
   statusEl.innerHTML = `<div style="color:var(--cyan);font-size:11px;text-align:center;padding:12px">🤖 Claude is reading your roster…</div>`;
   resultsEl.innerHTML = '';
