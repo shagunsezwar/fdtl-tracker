@@ -458,53 +458,101 @@ textarea{resize:none;min-height:160px;font-size:12px;line-height:1.7}
 </div><!-- end dash -->
 
 <!-- ═══════════════════════════════════
-     PAGE 2 — ROSTER (paste text)
+     PAGE 2 — ROSTER
 ═══════════════════════════════════ -->
 <div id="page-roster" class="page">
 
-  <div class="infobox">
-    <strong>How to get your roster text:</strong><br>
-    Open eCrew app → your roster → use <strong>Google Lens</strong> to scan it, or long-press to select all text → Copy. Then paste below. The app parses every duty automatically — no AI, no internet needed.
+  <!-- Tab toggle -->
+  <div style="display:flex;gap:8px;margin-bottom:14px">
+    <button id="roster-tab-ai" class="btn btn-cyan" style="flex:1;font-size:11px"
+      onclick="rosterTab('ai')">📷 Scan Screenshot</button>
+    <button id="roster-tab-text" class="btn btn-ghost" style="flex:1;font-size:11px"
+      onclick="rosterTab('text')">📋 Paste Text</button>
   </div>
 
-  <div class="frow" style="margin-bottom:12px">
-    <div class="fg" style="margin:0">
-      <label class="fl">Month / Year</label>
-      <input type="month" id="paste-month">
+  <!-- AI screenshot section -->
+  <div id="roster-ai-section">
+    <div class="infobox" style="margin-bottom:12px">
+      Take a screenshot of your <strong>eCrew roster</strong> and upload it here. Claude will read all duties automatically — flights, standbys, days off — and log them instantly.
     </div>
-    <div class="fg" style="margin:0">
-      <label class="fl">Roster type</label>
-      <select id="paste-type">
-        <option value="pre">Pre-roster</option>
-        <option value="update">Update</option>
-        <option value="actual">Actual</option>
-      </select>
+
+    <div class="frow" style="margin-bottom:12px">
+      <div class="fg" style="margin:0">
+        <label class="fl">Month / Year</label>
+        <input type="month" id="ai-month">
+      </div>
+      <div class="fg" style="margin:0">
+        <label class="fl">Roster type</label>
+        <select id="ai-rtype">
+          <option value="pre">Pre-roster</option>
+          <option value="update">Update</option>
+          <option value="actual">Actual</option>
+        </select>
+      </div>
     </div>
+
+    <!-- Upload area -->
+    <div id="roster-drop-zone"
+      style="border:2px dashed var(--edge2);border-radius:12px;padding:28px 16px;
+             text-align:center;cursor:pointer;margin-bottom:12px;transition:border-color .2s"
+      onclick="document.getElementById('roster-img-input').click()"
+      ondragover="event.preventDefault();this.style.borderColor='var(--cyan)'"
+      ondragleave="this.style.borderColor='var(--edge2)'"
+      ondrop="handleRosterDrop(event)">
+      <div style="font-size:32px;margin-bottom:8px">📷</div>
+      <div style="font-size:13px;font-weight:600;color:var(--text)">Tap to upload eCrew screenshot</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:4px">PNG, JPG — you can upload multiple screenshots</div>
+    </div>
+    <input type="file" id="roster-img-input" accept="image/*" multiple style="display:none"
+      onchange="handleRosterImages(this.files)">
+
+    <!-- Preview thumbnails -->
+    <div id="roster-img-preview" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"></div>
+
+    <button class="btn btn-cyan" id="roster-scan-btn" onclick="scanRosterImages()" style="display:none;width:100%;margin-bottom:14px">
+      🤖 Scan &amp; Import Duties
+    </button>
+
+    <div id="roster-ai-status"></div>
+    <div id="roster-ai-results"></div>
   </div>
 
-  <div class="fg">
-    <label class="fl">Paste roster text here</label>
-    <textarea id="paste-input" placeholder="Paste your eCrew roster text here...
+  <!-- Text paste section (hidden by default) -->
+  <div id="roster-text-section" style="display:none">
+    <div class="infobox" style="margin-bottom:12px">
+      Open eCrew → use <strong>Google Lens</strong> to scan your roster, or long-press to select text → Copy → paste below.
+    </div>
+
+    <div class="frow" style="margin-bottom:12px">
+      <div class="fg" style="margin:0">
+        <label class="fl">Month / Year</label>
+        <input type="month" id="paste-month">
+      </div>
+      <div class="fg" style="margin:0">
+        <label class="fl">Roster type</label>
+        <select id="paste-type">
+          <option value="pre">Pre-roster</option>
+          <option value="update">Update</option>
+          <option value="actual">Actual</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="fg">
+      <label class="fl">Paste roster text here</label>
+      <textarea id="paste-input" placeholder="Paste your eCrew roster text here...
 
 Example:
 01 Wed
 Reporting time: 1520
-6E2013  1620  BLR  IXC  1820
-6E2014  1920  IXC  BLR  2230
-Debriefing time: 2300
+6863  1620  BLR1  NAG  1820
+6864  1920  NAG  BLR1  2230
+Debriefing time: 2300"></textarea>
+    </div>
 
-03 Fri
-OFG - Golden Day Off
-
-04 Sat
-Reporting time: 2230
-6E441  2330  BLR  DEL  0120
-Debriefing time: 0220"></textarea>
+    <button class="btn btn-cyan" onclick="parseRoster()" style="margin-bottom:14px">Parse &amp; Check Roster</button>
+    <div id="parse-results"></div>
   </div>
-
-  <button class="btn btn-cyan" onclick="parseRoster()" style="margin-bottom:14px">Parse &amp; Check Roster</button>
-
-  <div id="parse-results"></div>
 
 </div><!-- end roster -->
 
@@ -2210,12 +2258,247 @@ function renderDash() {
 // ══════════════════════════════════════════════════════════
 function parseTimeStr(s) {
   if (!s) return null;
+  s = String(s).replace(/\+\d+/g,'').trim(); // strip +1, +2 next-day markers
   s = s.replace(/[.:]/g,'').trim();
   if (s.length===3) s='0'+s;
   if (s.length!==4) return null;
   const h=parseInt(s.slice(0,2)), m=parseInt(s.slice(2,4));
   if (isNaN(h)||isNaN(m)||h>23||m>59) return null;
   return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+
+// Strip airport terminal digits (BLR1→BLR, MAA1→MAA)
+function stripTerminal(code) {
+  return String(code).replace(/\d+$/,'').toUpperCase().slice(0,3);
+}
+
+// ── Roster tab toggle ──
+function rosterTab(tab) {
+  document.getElementById('roster-ai-section').style.display   = tab==='ai'   ? '' : 'none';
+  document.getElementById('roster-text-section').style.display = tab==='text' ? '' : 'none';
+  document.getElementById('roster-tab-ai').className   = 'btn ' + (tab==='ai'   ? 'btn-cyan' : 'btn-ghost');
+  document.getElementById('roster-tab-text').className = 'btn ' + (tab==='text' ? 'btn-cyan' : 'btn-ghost');
+}
+
+// ── Image upload handling ──
+let _rosterImages = [];
+
+function handleRosterDrop(e) {
+  e.preventDefault();
+  document.getElementById('roster-drop-zone').style.borderColor = 'var(--edge2)';
+  handleRosterImages(e.dataTransfer.files);
+}
+
+async function handleRosterImages(files) {
+  for (const file of files) {
+    if (!file.type.startsWith('image/')) continue;
+    const b64 = await fileToB64(file);
+    _rosterImages.push({ file, b64, type: file.type });
+  }
+  renderImagePreviews();
+  document.getElementById('roster-scan-btn').style.display = _rosterImages.length ? '' : 'none';
+}
+
+function fileToB64(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result.split(',')[1]);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+
+function renderImagePreviews() {
+  const el = document.getElementById('roster-img-preview');
+  el.innerHTML = _rosterImages.map((img, i) => `
+    <div style="position:relative;width:72px;height:72px">
+      <img src="data:${img.type};base64,${img.b64}"
+        style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--edge2)">
+      <button onclick="removeRosterImage(${i})"
+        style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;
+               background:var(--red);border:none;color:#fff;font-size:11px;cursor:pointer;line-height:1">✕</button>
+    </div>`).join('');
+}
+
+function removeRosterImage(i) {
+  _rosterImages.splice(i, 1);
+  renderImagePreviews();
+  document.getElementById('roster-scan-btn').style.display = _rosterImages.length ? '' : 'none';
+}
+
+// ── AI Scan ──
+async function scanRosterImages() {
+  if (!_rosterImages.length) { alert('Please upload at least one screenshot.'); return; }
+  const month = document.getElementById('ai-month').value;
+  if (!month) {
+    alert('Please select the month and year for this roster before scanning.\n\nThis is needed to assign correct dates to each duty.');
+    document.getElementById('ai-month').focus();
+    return;
+  }
+  btn.disabled = true; btn.textContent = '⏳ Scanning…';
+  statusEl.innerHTML = `<div style="color:var(--cyan);font-size:11px;text-align:center;padding:12px">🤖 Claude is reading your roster…</div>`;
+  resultsEl.innerHTML = '';
+  const year = month ? month.slice(0,4) : String(nowIST().getUTCFullYear());
+  const mon  = month ? month.slice(5,7) : String(nowIST().getUTCMonth()+1).padStart(2,'0');
+  const content = [
+    ..._rosterImages.map(img => ({ type:'image', source:{ type:'base64', media_type:img.type, data:img.b64 } })),
+    { type:'text', text:`You are reading an IndiGo eCrew roster screenshot. Extract ALL duty days and return ONLY a JSON array, no markdown, no explanation.
+Year: ${year}, Month: ${mon} (use these for dates)
+
+For each day return one object:
+{"day":"01","dtype":"flight","report":"07:20","debrief":"16:10","debriefNextDay":false,"sectors":[{"dep":"0820","from":"BLR","to":"NAG","arr":"0955","arrNextDay":false,"deadhead":false}],"note":"","hasDeadhead":false}
+
+DTYPE RULES — read carefully:
+- "flight"          → day has numeric flight numbers (853, 350, 2313, 6863 etc) with sector rows
+- "flight-deadhead" → same as flight but at least one sector has a PNR/REF booking reference (e.g. REF:A9WUUG)
+- "standby-home"    → day has code SBY, SBYP, XSBY, or TSBY shown in a sector-like row (cyan/teal colour). These are home or hotel standby. Report = Reporting time, Debrief = end time in the SBY row.
+- "standby-apt"     → day has code ASBD. Airport standby. Report = Reporting time, Debrief = end time.
+- "off"             → day shows R, OFG, Day Off, PL, Privilege Leave, Weekly Rest, BLANK, or HOTEL lines (DEL HOTEL, SIN HOTEL, layover hotel — hotel days are pure rest, NOT standby, skip them)
+
+TIME RULES:
+- Strip leading A from times (A2323→2323, A0158→0158) — A means actual time
+- Strip trailing +1/+2 from times but set arrNextDay=true or debriefNextDay=true accordingly
+- Convert all HHMM to HH:MM format
+
+AIRPORT CODES — strip trailing digits only:
+- BLR1→BLR, DEL2→DEL, BOM2→BOM, MAA1→MAA, SIN2→SIN, NAG→NAG (no digit = keep as is)
+
+DEADHEAD — a sector is deadhead if a PNR/booking ref appears on same or next line (REF:A9WUUG etc). Set deadhead=true on that sector and hasDeadhead=true on the day.
+
+BLOCK TIME per sector = arr minus dep. If arrNextDay=true, add 1440 minutes to arr before subtracting dep.
+
+Return ONLY the JSON array starting with [ and ending with ]` }
+  ];
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:4000, messages:[{role:'user',content}] })
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error?.message||'API error');
+    const text = data.content.map(b=>b.text||'').join('').trim();
+    const jsonStart = text.indexOf('['), jsonEnd = text.lastIndexOf(']');
+    if (jsonStart===-1||jsonEnd===-1) throw new Error('No JSON found in response');
+    const days = JSON.parse(text.slice(jsonStart, jsonEnd+1));
+    processAIDays(days, year, mon, rtype, resultsEl, statusEl);
+  } catch(err) {
+    statusEl.innerHTML = `<div style="color:var(--red);font-size:11px;padding:10px">❌ Error: ${err.message}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = '🤖 Scan & Import Duties';
+  }
+}
+
+function processAIDays(days, year, mon, rtype, resultsEl, statusEl) {
+  const parsed = [];
+  for (const d of days) {
+    if (!d.day || d.dtype==='off') continue;
+    const dayNum  = String(d.day).padStart(2,'0');
+    const dateStr = `${year}-${mon}-${dayNum}`;
+    const report  = parseTimeStr(d.report);
+    const debrief = parseTimeStr(d.debrief);
+    if (!report||!debrief) continue;
+
+    if (d.dtype==='standby-home'||d.dtype==='standby-apt') {
+      const sbH = calcDutyPeriodH(report, debrief);
+      parsed.push({ date:dateStr, dtype:d.dtype, report, debrief, fdp:sbH,
+        route:d.note||'', crew:'2p', status:'ok', issues:[], warns:[], rosterType:rtype });
+      continue;
+    }
+
+    // Flight/deadhead duty — compute block from sectors
+    // Actual times have A prefix stripped by Claude; +1 handled via arrNextDay flag
+    let blockMins=0, sectors=[], hasDeadhead=false;
+    for (const s of (d.sectors||[])) {
+      const dep=parseTimeStr(s.dep), arr=parseTimeStr(s.arr);
+      if (!dep||!arr) continue;
+      const [dh,dm]=dep.split(':').map(Number);
+      const [ah,am]=arr.split(':').map(Number);
+      let depMins = dh*60+dm;
+      let arrMins = ah*60+am + (s.arrNextDay ? 1440 : 0);
+      let bm = arrMins - depMins;
+      if (bm <= 0) bm += 1440; // fallback if flag missing
+      blockMins += bm;
+      sectors.push(`${stripTerminal(s.from)}-${stripTerminal(s.to)}`);
+      if (s.deadhead) hasDeadhead=true;
+    }
+    if (d.hasDeadhead) hasDeadhead=true;
+
+    let route='';
+    if (sectors.length) { route=sectors[0].split('-')[0]; sectors.forEach(s=>{route+='-'+s.split('-')[1];}); }
+
+    const dtype  = hasDeadhead ? 'flight-deadhead' : 'flight';
+    const block  = +(blockMins/60).toFixed(2);
+    const land   = (d.sectors||[]).filter(s=>!s.deadhead).length || 1;
+    const fdp    = calcFDPh(report, debrief);
+    const night  = isNightDuty(report, debrief) ? 'yes' : 'no';
+    const engoff = addMins(debrief, -30);
+    const L      = getLimits(land, night, '2p');
+    const issues=[], warns=[];
+    if (fdp>L.maxFDP) issues.push(`FDP ${fmtH(fdp)} > max ${fmtH(L.maxFDP)} (§2.6.1)`);
+    else if (fdp>L.maxFDP*.9) warns.push('FDP within 10% of max');
+    if (block>L.maxFT) issues.push(`Block ${fmtHHMM(block)} > max FT ${L.maxFT}h`);
+    if (land>L.land) issues.push(`${land} landings > max ${L.land}`);
+    const status=issues.length?'bad':warns.length?'warn':'ok';
+    parsed.push({ date:dateStr, dtype, route, report, debrief, engoff,
+      block, landings:land, night, fdp, crew:'2p', issues, warns, status, rosterType:rtype });
+  }
+
+  if (!parsed.length) {
+    statusEl.innerHTML=`<div style="color:var(--amber);font-size:11px;padding:10px">⚠️ No duties found. Try a clearer screenshot.</div>`;
+    return;
+  }
+  const bad=parsed.filter(d=>d.status==='bad').length, wrn=parsed.filter(d=>d.status==='warn').length;
+  statusEl.innerHTML=`<div style="font-size:11px;color:var(--green);padding:8px 0">
+    ✓ Found <strong>${parsed.length}</strong> duties
+    ${bad?`· <span style="color:var(--red)">${bad} issues</span>`:''}
+    ${wrn?`· <span style="color:var(--amber)">${wrn} advisories</span>`:''}
+  </div>`;
+  resultsEl.innerHTML=`
+    <div style="margin-bottom:10px">${parsed.map(d=>{
+      const col=d.status==='bad'?'var(--red)':d.status==='warn'?'var(--amber)':'var(--green)';
+      const icon=d.dtype==='flight-deadhead'?'✈🔀':d.dtype.startsWith('standby')?'🕐':'✈';
+      const issueTxt=[...(d.issues||[]),...(d.warns||[])].map(x=>`<div style="font-size:9px;color:var(--amber)">${x}</div>`).join('');
+      return `<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 10px;margin-bottom:6px;
+        background:var(--panel2);border-radius:8px;border-left:3px solid ${col}">
+        <span style="font-size:16px">${icon}</span>
+        <div style="flex:1">
+          <div style="font-size:11px;font-weight:700;color:var(--text)">${fmtDate(d.date)}</div>
+          <div style="font-size:10px;color:var(--muted)">${d.route||d.dtype} · ${d.report}–${d.debrief}
+            ${d.dtype.startsWith('flight')?`· Block ${fmtHHMM(d.block)} · ${d.landings} ldg`:` · ${fmtH(d.fdp)}`}
+            ${d.night==='yes'?' · 🌙':''}
+            ${d.dtype==='flight-deadhead'?' · <span style="color:var(--cyan)">DH</span>':''}
+          </div>${issueTxt}
+        </div>
+      </div>`;
+    }).join('')}</div>
+    <button class="btn btn-cyan" style="width:100%" onclick="confirmAIImport()">
+      ✅ Import all ${parsed.length} duties
+    </button>
+    <button class="btn btn-ghost" style="width:100%;margin-top:8px"
+      onclick="document.getElementById('roster-ai-results').innerHTML='';document.getElementById('roster-ai-status').innerHTML=''">
+      Cancel
+    </button>`;
+  window._aiParsedDuties = parsed;
+}
+
+function confirmAIImport() {
+  const parsed = window._aiParsedDuties || [];
+  if (!parsed.length) return;
+  let added=0, skipped=0;
+  for (const d of parsed) {
+    if (duties.find(x=>x.date===d.date&&x.report===d.report)) { skipped++; continue; }
+    duties.push({...d, id: Date.now()+Math.random()});
+    added++;
+  }
+  persist(duties); renderDutiesFull(); renderDash();
+  window._aiParsedDuties = [];
+  document.getElementById('roster-ai-results').innerHTML='';
+  document.getElementById('roster-ai-status').innerHTML=
+    `<div style="color:var(--green);font-size:12px;padding:10px;text-align:center">
+      ✅ Imported ${added} duties${skipped?` · ${skipped} already existed`:''}
+    </div>`;
+  _rosterImages=[]; renderImagePreviews();
+  document.getElementById('roster-scan-btn').style.display='none';
 }
 
 const SKIP_WORDS = ['OFG','GOLDEN DAY OFF','PRIVILEGE LEAVE',' PL ','HOTEL','WEEKLY REST','LAYOVER','DAY OFF','BLANK','LEAVE'];
@@ -2260,8 +2543,8 @@ function parseRoster() {
         const debM = ln.match(/debriefing\s*time[:\s]+(\d{3,4})/i);
         if (debM) { debrief=parseTimeStr(debM[1]); j++; continue; }
 
-        // Flight sector: FLT DEP ORG DST ARR
-        const secM = ln.match(/([A-Z0-9]{2,8})\s+(\d{4})\s+([A-Z]{3})\s+([A-Z]{3})\s+(\d{4})/i);
+        // Flight sector: FLT DEP ORG1 DST1 ARR (strip terminal digits from airport codes)
+        const secM = ln.match(/([A-Z0-9]{2,8})\s+(\d{3,4}\+?\d*)\s+([A-Z]{3}\d*)\s+([A-Z]{3}\d*)\s+(\d{3,4}\+?\d*)/i);
         if (secM) {
           const dep=parseTimeStr(secM[2]), arr=parseTimeStr(secM[5]);
           if (dep&&arr) {
@@ -2270,7 +2553,7 @@ function parseRoster() {
             let bm=(ah*60+am)-(dh*60+dm);
             if (bm<0) bm+=1440;
             blockMins+=bm;
-            sectors.push(`${secM[3].toUpperCase()}-${secM[4].toUpperCase()}`);
+            sectors.push(`${stripTerminal(secM[3])}-${stripTerminal(secM[4])}`);
           }
           j++; continue;
         }
@@ -3181,7 +3464,9 @@ if ('serviceWorker' in navigator) {
 // ══════════════════════════════════════════════════════════
 document.getElementById('l-date').value = today();
 const nm=nowIST();
-document.getElementById('paste-month').value=`${nm.getUTCFullYear()}-${String(nm.getUTCMonth()+1).padStart(2,'0')}`;
+const curMonthVal=`${nm.getUTCFullYear()}-${String(nm.getUTCMonth()+1).padStart(2,'0')}`;
+document.getElementById('paste-month').value = curMonthVal;
+document.getElementById('ai-month').value    = curMonthVal;
 tickClock();
 _clockTimer = setInterval(tickClock, 1000);
 renderDash();
