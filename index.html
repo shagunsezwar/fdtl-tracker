@@ -684,8 +684,22 @@ Debriefing time: 2300"></textarea>
 ═══════════════════════════════════ -->
 <div id="page-cumul" class="page">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-    <div class="slbl" style="margin:0">Cumulative Limits</div>
-    <span class="pctag">§2.8</span>
+    <div class="slbl" style="margin:0">Limits</div>
+    <span class="pctag">§2.8 · §2.10.6</span>
+  </div>
+
+  <!-- WEEKLY REST §2.10.6 -->
+  <div class="pcard" style="margin-bottom:16px" id="weekly-rest-card">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <span style="font-size:18px">🛌</span>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--text);letter-spacing:.5px">WEEKLY REST</div>
+        <div style="font-size:9px;color:var(--muted)">§2.10.6 · Min 48h continuous · 2 local nights · max 168h between rests</div>
+      </div>
+    </div>
+    <div id="weekly-rest-content">
+      <div style="font-size:11px;color:var(--muted);text-align:center;padding:12px">Log duties to track weekly rest</div>
+    </div>
   </div>
 
   <!-- TILL DATE — only completed duties -->
@@ -2160,6 +2174,184 @@ function renderNextReport() {
   </div>`;
 }
 
+// ══════════════════════════════════════════════════════════
+// WEEKLY REST — §2.10.6
+// Min 48h continuous rest, including 2 local nights (§2.3.10)
+// Local night = 8h window between 2200–0800 IST
+// Max 168h from end of one weekly rest to start of next
+// ══════════════════════════════════════════════════════════
+
+// Check if a rest period [startEpoch, endEpoch] contains 2 local nights
+// Local night (§2.3.10): 8 consecutive hours between 2200–0800 IST
+// We check if the rest window covers at least 2 calendar nights where
+// the overlap with 2200–0800 IST is ≥ 8h
+function countLocalNights(restStartEpoch, restEndEpoch) {
+  // Convert epochs to IST minutes-of-day by shifting +5:30
+  const IST_OFFSET = (5*60+30)*60000;
+  let nights = 0;
+  // Walk day by day through the rest period
+  // For each calendar night (22:00–08:00 IST), check if rest covers ≥ 8h of it
+  const startIST = new Date(restStartEpoch + IST_OFFSET);
+  const endIST   = new Date(restEndEpoch   + IST_OFFSET);
+  // Start from the first 22:00 IST on or before restStart
+  let nightStart = Date.UTC(
+    startIST.getUTCFullYear(), startIST.getUTCMonth(), startIST.getUTCDate(),
+    16, 30  // 22:00 IST = 16:30 UTC
+  );
+  // Go back one day if we're past 22:00 IST already
+  if (nightStart > restStartEpoch) nightStart -= 86400000;
+
+  while (nightStart < restEndEpoch) {
+    const nightEnd = nightStart + 10*3600000; // 22:00 to 08:00 = 10h window
+    // Overlap between [restStart, restEnd] and [nightStart, nightEnd]
+    const overlapStart = Math.max(restStartEpoch, nightStart);
+    const overlapEnd   = Math.min(restEndEpoch,   nightEnd);
+    const overlapH     = (overlapEnd - overlapStart) / 3600000;
+    if (overlapH >= 8) nights++;
+    nightStart += 86400000; // next night
+  }
+  return nights;
+}
+
+// Find all weekly rest periods from logged duties
+// A weekly rest = gap between consecutive duties of ≥ 48h containing ≥ 2 local nights
+function findWeeklyRests() {
+  if (duties.length < 2) return [];
+
+  // Sort all duties by date/report
+  const sorted = [...duties]
+    .filter(d => d.report && (d.debrief || d.dtype.startsWith('standby')))
+    .sort((a,b) => a.date.localeCompare(b.date) || a.report.localeCompare(b.report));
+
+  const rests = [];
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const prev = sorted[i];
+    const next = sorted[i+1];
+    const prevDebDT = getDebriefDT(prev);
+    const nextRepDT = getReportDT(next);
+    if (!prevDebDT || !nextRepDT) continue;
+
+    const gapH = (nextRepDT - prevDebDT) / 3600000;
+    if (gapH < 48) continue; // not long enough for weekly rest
+
+    const localNights = countLocalNights(prevDebDT.getTime(), nextRepDT.getTime());
+    rests.push({
+      start:       prevDebDT,
+      end:         nextRepDT,
+      gapH:        +gapH.toFixed(1),
+      localNights,
+      qualifies:   gapH >= 48 && localNights >= 2,
+      prevDuty:    prev,
+      nextDuty:    next
+    });
+  }
+  return rests;
+}
+
+function renderWeeklyRest() {
+  const el = document.getElementById('weekly-rest-content');
+  if (!el) return;
+
+  const nowReal = new Date();
+  const rests = findWeeklyRests();
+
+  // Find the most recent qualifying weekly rest (end in the past)
+  const pastRests = rests.filter(r => r.qualifies && r.end <= nowReal);
+  const lastRest  = pastRests.length ? pastRests[pastRests.length-1] : null;
+
+  // Find the next upcoming qualifying rest (end in the future)
+  const nextRest  = rests.find(r => r.qualifies && r.end > nowReal);
+
+  // Find any non-qualifying gaps (≥48h but lacking 2 local nights) — violations
+  const violations = rests.filter(r => !r.qualifies && r.gapH >= 48);
+
+  let html = '';
+
+  // ── Last weekly rest ──
+  if (lastRest) {
+    const deadline = new Date(lastRest.end.getTime() + 168*3600000);
+    const msLeft   = deadline - nowReal;
+    const hLeft    = Math.floor(Math.max(0, msLeft)/3600000);
+    const mLeft    = Math.floor((Math.max(0, msLeft)%3600000)/60000);
+    const overdue  = msLeft <= 0;
+    const urgent   = !overdue && hLeft < 24;
+    const deadlineStr = fmtAsIST(deadline);
+    const lastEndStr  = fmtAsIST(lastRest.end);
+
+    html += `<div style="padding:10px;background:var(--panel3);border-radius:8px;margin-bottom:10px">
+      <div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Last weekly rest</div>
+      <div style="font-size:11px;color:var(--text);line-height:1.8">
+        Ended: <strong>${lastEndStr}</strong><br>
+        Duration: <strong style="color:var(--green)">${lastRest.gapH}h</strong>
+        · Local nights: <strong style="color:var(--green)">${lastRest.localNights} 🌙</strong>
+      </div>
+    </div>
+    <div style="padding:10px;background:${overdue?'var(--red-dim)':urgent?'rgba(245,166,35,.1)':'var(--green-dim)'};
+      border:1px solid ${overdue?'rgba(255,77,77,.3)':urgent?'rgba(245,166,35,.3)':'rgba(0,230,118,.2)'};
+      border-radius:8px;margin-bottom:10px">
+      <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">
+        Next weekly rest must START by
+      </div>
+      <div style="font-size:16px;font-weight:700;color:${overdue?'var(--red)':urgent?'var(--amber)':'var(--green)'};font-family:var(--mono)">
+        ${deadlineStr}
+      </div>
+      <div style="font-size:11px;margin-top:4px;color:${overdue?'var(--red)':urgent?'var(--amber)':'var(--muted)'}">
+        ${overdue
+          ? '⛔ 168h deadline EXCEEDED — weekly rest overdue!'
+          : `⏱ ${hLeft}h ${String(mLeft).padStart(2,'0')}m remaining`}
+      </div>
+      <div style="font-size:9px;color:var(--muted);margin-top:4px">168h from end of last rest · §2.10.6</div>
+    </div>`;
+  } else {
+    html += `<div style="padding:10px;background:var(--panel3);border-radius:8px;margin-bottom:10px;font-size:11px;color:var(--muted)">
+      No completed weekly rest found yet.<br>A weekly rest = ≥48h gap with 2 local nights between duties.
+    </div>`;
+  }
+
+  // ── Upcoming weekly rest (if scheduled) ──
+  if (nextRest) {
+    html += `<div style="padding:10px;background:var(--panel3);border-radius:8px;margin-bottom:10px">
+      <div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Upcoming weekly rest (planned)</div>
+      <div style="font-size:11px;color:var(--text);line-height:1.8">
+        Starts: <strong>${fmtAsIST(nextRest.start)}</strong><br>
+        Ends: <strong>${fmtAsIST(nextRest.end)}</strong><br>
+        Duration: <strong style="color:var(--green)">${nextRest.gapH}h</strong>
+        · Local nights: <strong style="color:var(--green)">${nextRest.localNights} 🌙</strong>
+      </div>
+    </div>`;
+  }
+
+  // ── Violations (gaps ≥48h but < 2 local nights) ──
+  if (violations.length) {
+    html += `<div style="padding:10px;background:var(--red-dim);border:1px solid rgba(255,77,77,.3);border-radius:8px;margin-bottom:10px">
+      <div style="font-size:10px;color:var(--red);font-weight:700;margin-bottom:6px">⚠ Rest periods missing 2 local nights</div>
+      ${violations.map(v=>`<div style="font-size:10px;color:var(--muted);margin-bottom:4px">
+        ${fmtAsIST(v.start)} → ${fmtAsIST(v.end)} · ${v.gapH}h · ${v.localNights} local night${v.localNights!==1?'s':''} (need 2)
+      </div>`).join('')}
+    </div>`;
+  }
+
+  // ── All rest history ──
+  if (rests.length > 0) {
+    html += `<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">All rest periods ≥48h</div>`;
+    html += rests.map(r => {
+      const col = r.qualifies ? 'var(--green)' : 'var(--red)';
+      const icon = r.qualifies ? '✓' : '⛔';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;
+        background:var(--panel3);border-radius:7px;margin-bottom:5px;
+        border-left:3px solid ${col}">
+        <span style="color:${col};font-size:13px">${icon}</span>
+        <div style="flex:1;font-size:10px">
+          <div style="color:var(--text)">${fmtAsIST(r.start)} → ${fmtAsIST(r.end)}</div>
+          <div style="color:var(--muted)">${r.gapH}h · ${r.localNights} local night${r.localNights!==1?'s':''} ${r.qualifies?'· Weekly rest ✓':'· <span style="color:var(--red)">Missing local nights</span>'}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  el.innerHTML = html || '<div style="font-size:11px;color:var(--muted);text-align:center;padding:12px">No duties logged yet</div>';
+}
+
 function renderCumulative() {
   const nowReal = new Date(); // real epoch for comparing with getDebriefDT results
 
@@ -2197,11 +2389,12 @@ function renderCumulative() {
   if (el('cum-ft-plan')) el('cum-ft-plan').innerHTML = progHTML(d => sumFT(filterDays(d)), 'maxFT');
   if (el('cum-dp-plan')) el('cum-dp-plan').innerHTML = progHTML(d => sumDP(filterDays(d)), 'maxDP');
 
-  // Legacy element IDs (kept for compatibility)
-  if (el('cum-ft-page')) el('cum-ft-page').innerHTML = el('cum-ft-plan')?.innerHTML || '';
-  if (el('cum-dp-page')) el('cum-dp-page').innerHTML = el('cum-dp-plan')?.innerHTML || '';
+  const ftPlanEl = el('cum-ft-plan');
+  const dpPlanEl = el('cum-dp-plan');
+  if (el('cum-ft-page')) el('cum-ft-page').innerHTML = ftPlanEl ? ftPlanEl.innerHTML : '';
+  if (el('cum-dp-page')) el('cum-dp-page').innerHTML = dpPlanEl ? dpPlanEl.innerHTML : '';
 }
-function renderCumul() { renderCumulative(); }
+function renderCumul() { renderWeeklyRest(); renderCumulative(); }
 
 function renderRestPeriods() {
   const card = document.getElementById('rest-card');
@@ -2251,6 +2444,49 @@ function renderDash() {
   renderRestPeriods();
   buildLandingRow();
   recalcFDP();
+  renderWeeklyRestWarning();
+}
+
+function renderWeeklyRestWarning() {
+  // Show a warning on dash if weekly rest deadline is within 48h or exceeded
+  let el = document.getElementById('weekly-rest-dash-warn');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'weekly-rest-dash-warn';
+    // Insert after nr-box-el
+    const ref = document.getElementById('nr-box-el');
+    if (ref && ref.parentNode) ref.parentNode.insertBefore(el, ref.nextSibling);
+  }
+
+  const nowReal = new Date();
+  const rests   = findWeeklyRests();
+  const pastRests = rests.filter(r => r.qualifies && r.end <= nowReal);
+  const lastRest  = pastRests.length ? pastRests[pastRests.length-1] : null;
+  if (!lastRest) { el.innerHTML=''; return; }
+
+  const deadline = new Date(lastRest.end.getTime() + 168*3600000);
+  const msLeft   = deadline - nowReal;
+  const hLeft    = Math.floor(Math.max(0,msLeft)/3600000);
+  const mLeft    = Math.floor((Math.max(0,msLeft)%3600000)/60000);
+  const overdue  = msLeft <= 0;
+  const urgent   = !overdue && hLeft < 48;
+
+  if (!overdue && !urgent) { el.innerHTML=''; return; }
+
+  el.innerHTML = `<div style="margin-bottom:12px;padding:12px;
+    background:${overdue?'var(--red-dim)':'rgba(245,166,35,.1)'};
+    border:1px solid ${overdue?'rgba(255,77,77,.4)':'rgba(245,166,35,.4)'};
+    border-radius:10px;cursor:pointer" onclick="goPage('cumul',document.querySelectorAll('.nb')[4])">
+    <div style="font-size:10px;font-weight:700;color:${overdue?'var(--red)':'var(--amber)'};letter-spacing:.5px;margin-bottom:4px">
+      🛌 WEEKLY REST §2.10.6
+    </div>
+    <div style="font-size:12px;color:var(--text)">
+      ${overdue
+        ? '⛔ Weekly rest deadline EXCEEDED'
+        : `Next weekly rest must start within <strong>${hLeft}h ${String(mLeft).padStart(2,'0')}m</strong>`}
+    </div>
+    <div style="font-size:10px;color:var(--muted);margin-top:3px">Tap to view → Limits page</div>
+  </div>`;
 }
 
 // ══════════════════════════════════════════════════════════
