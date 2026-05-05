@@ -648,7 +648,21 @@ Debriefing time: 2300"></textarea>
     <button class="btn btn-ghost btn-sm" onclick="clearAll()" style="color:var(--red)">Clear all</button>
   </div>
 
-  <!-- Month / Year scroller -->
+  <!-- Year scroller -->
+  <div style="display:flex;align-items:center;gap:0;margin-bottom:6px;
+    background:var(--panel3);border:1px solid var(--edge2);border-radius:8px;overflow:hidden">
+    <button onclick="shiftDutiesYear(-1)"
+      style="padding:7px 14px;background:none;border:none;color:var(--muted);
+             font-size:16px;cursor:pointer;flex-shrink:0">‹</button>
+    <div id="duties-year-label"
+      style="flex:1;text-align:center;font-family:var(--mono);font-size:11px;
+             font-weight:600;color:var(--muted);letter-spacing:1px"></div>
+    <button onclick="shiftDutiesYear(1)"
+      style="padding:7px 14px;background:none;border:none;color:var(--muted);
+             font-size:16px;cursor:pointer;flex-shrink:0">›</button>
+  </div>
+
+  <!-- Month scroller -->
   <div style="display:flex;align-items:center;gap:0;margin-bottom:14px;
     background:var(--panel2);border:1px solid var(--edge2);border-radius:10px;overflow:hidden">
     <button onclick="shiftDutiesMonth(-1)"
@@ -1116,6 +1130,11 @@ function initDutiesMonth() {
   _dutiesMonth = n.getUTCMonth() + 1;
 }
 
+function shiftDutiesYear(delta) {
+  _dutiesYear += delta;
+  renderDutiesFull();
+}
+
 function shiftDutiesMonth(delta) {
   _dutiesMonth += delta;
   if (_dutiesMonth > 12) { _dutiesMonth = 1;  _dutiesYear++; }
@@ -1133,12 +1152,16 @@ function renderDutiesFull() {
   // Build YYYY-MM key for active month
   const activeMonth = `${_dutiesYear}-${String(_dutiesMonth).padStart(2,'0')}`;
 
-  // Update scroller label
+  // Update year label
+  const yearEl = document.getElementById('duties-year-label');
+  if (yearEl) yearEl.textContent = String(_dutiesYear);
+
+  // Update month label
   const labelEl = document.getElementById('duties-month-label');
   const rangeEl = document.getElementById('duties-month-range');
-  if (labelEl) labelEl.textContent = _MONTHS[_dutiesMonth-1] + ' ' + _dutiesYear;
+  if (labelEl) labelEl.textContent = _MONTHS[_dutiesMonth-1];
 
-  // Show duty count for this month in the range label
+  // Show duty count for this month
   const monthDuties = allSorted.filter(d => d.date.slice(0,7) === activeMonth);
   if (rangeEl) rangeEl.textContent = monthDuties.length
     ? `${monthDuties.length} ${monthDuties.length===1?'duty':'duties'}`
@@ -1153,12 +1176,12 @@ function renderDutiesFull() {
     el.innerHTML = `<div class="empty">
       <div class="empty-icon">📅</div>
       <div class="empty-text">No duties in ${_MONTHS[_dutiesMonth-1]} ${_dutiesYear}.<br>
-      Use ‹ › to navigate months.</div>
+      Use ‹ › to navigate.</div>
     </div>`;
     return;
   }
 
-  // Render all duties for the month — past and upcoming together, sorted by date
+  // Render all duties for the month — past and upcoming together
   el.innerHTML = buildDutiesHTML(monthDuties, allSorted);
 }
 
@@ -2174,16 +2197,20 @@ function findWeeklyRests() {
     const restStart = new Date(prevDebDT.getTime() + travelHomeMins * 60000);
     const restEnd   = new Date(nextRepDT.getTime()  - 45 * 60000);
 
-    const gapH = (restEnd - restStart) / 3600000;
-    if (gapH < 48) continue; // not long enough for weekly rest
+    const gapMins = Math.round((restEnd - restStart) / 60000);
+    const gapH    = Math.floor(gapMins / 60);
+    const gapM    = gapMins % 60;
+    const gapStr  = `${gapH}h ${String(gapM).padStart(2,'0')}m`;
+    if (gapMins < 48*60) continue;
 
     const localNights = countLocalNights(restStart.getTime(), restEnd.getTime());
     rests.push({
       start:       restStart,
       end:         restEnd,
-      gapH:        +gapH.toFixed(1),
+      gapH:        gapMins/60,   // keep as decimal for comparisons
+      gapStr,                    // exact HH:MM for display
       localNights,
-      qualifies:   gapH >= 48 && localNights >= 2,
+      qualifies:   gapMins >= 48*60 && localNights >= 2,
       prevDuty:    prev,
       nextDuty:    next
     });
@@ -2225,7 +2252,7 @@ function renderWeeklyRest() {
       <div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Last weekly rest</div>
       <div style="font-size:11px;color:var(--text);line-height:1.8">
         Ended: <strong>${lastEndStr}</strong><br>
-        Duration: <strong style="color:var(--green)">${lastRest.gapH}h</strong>
+        Duration: <strong style="color:var(--green)">${lastRest.gapStr}</strong>
         · Local nights: <strong style="color:var(--green)">${lastRest.localNights} 🌙</strong>
       </div>
     </div>
@@ -2258,7 +2285,7 @@ function renderWeeklyRest() {
       <div style="font-size:11px;color:var(--text);line-height:1.8">
         Starts: <strong>${fmtAsIST(nextRest.start)}</strong><br>
         Ends: <strong>${fmtAsIST(nextRest.end)}</strong><br>
-        Duration: <strong style="color:var(--green)">${nextRest.gapH}h</strong>
+        Duration: <strong style="color:var(--green)">${nextRest.gapStr}</strong>
         · Local nights: <strong style="color:var(--green)">${nextRest.localNights} 🌙</strong>
       </div>
     </div>`;
@@ -2269,7 +2296,7 @@ function renderWeeklyRest() {
     html += `<div style="padding:10px;background:var(--red-dim);border:1px solid rgba(255,77,77,.3);border-radius:8px;margin-bottom:10px">
       <div style="font-size:10px;color:var(--red);font-weight:700;margin-bottom:6px">⚠ Rest periods missing 2 local nights</div>
       ${violations.map(v=>`<div style="font-size:10px;color:var(--muted);margin-bottom:4px">
-        ${fmtAsIST(v.start)} → ${fmtAsIST(v.end)} · ${v.gapH}h · ${v.localNights} local night${v.localNights!==1?'s':''} (need 2)
+        ${fmtAsIST(v.start)} → ${fmtAsIST(v.end)} · ${v.gapStr} · ${v.localNights} local night${v.localNights!==1?'s':''} (need 2)
       </div>`).join('')}
     </div>`;
   }
@@ -2286,7 +2313,7 @@ function renderWeeklyRest() {
         <span style="color:${col};font-size:13px">${icon}</span>
         <div style="flex:1;font-size:10px">
           <div style="color:var(--text)">${fmtAsIST(r.start)} → ${fmtAsIST(r.end)}</div>
-          <div style="color:var(--muted)">${r.gapH}h · ${r.localNights} local night${r.localNights!==1?'s':''} ${r.qualifies?'· Weekly rest ✓':'· <span style="color:var(--red)">Missing local nights</span>'}</div>
+          <div style="color:var(--muted)">${r.gapStr} · ${r.localNights} local night${r.localNights!==1?'s':''} ${r.qualifies?'· Weekly rest ✓':'· <span style="color:var(--red)">Missing local nights</span>'}</div>
         </div>
       </div>`;
     }).join('');
