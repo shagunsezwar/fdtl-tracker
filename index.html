@@ -321,16 +321,7 @@ textarea{resize:none;min-height:160px;font-size:12px;line-height:1.7}
 .rule-ref{font-size:9px;color:var(--cyan);font-family:var(--mono);margin-right:6px}
 
 /* ── Slide animation for prev duties ── */
-#prev-duties-list{
-  overflow:hidden;
-  max-height:0;
-  transition:max-height .35s ease, opacity .3s ease;
-  opacity:0;
-}
-#prev-duties-list.slide-open{
-  max-height:9999px;
-  opacity:1;
-}
+
 
 /* ── Empty state ── */
 .empty{text-align:center;padding:40px 20px;color:var(--muted)}
@@ -652,30 +643,28 @@ Debriefing time: 2300"></textarea>
      PAGE 4 — DUTIES (all logged duties)
 ═══════════════════════════════════ -->
 <div id="page-duties-full" class="page">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
     <div class="slbl" style="margin:0">Duties</div>
     <button class="btn btn-ghost btn-sm" onclick="clearAll()" style="color:var(--red)">Clear all</button>
   </div>
 
-  <!-- Month filter -->
-  <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;background:var(--panel2);border:1px solid var(--edge2);border-radius:9px;padding:9px 12px">
-    <span style="font-size:10px;color:var(--muted);letter-spacing:.6px;text-transform:uppercase;flex-shrink:0">Filter month</span>
-    <select id="duties-month-filter" onchange="renderDutiesFull()"
-      style="flex:1;background:var(--panel3);border:1px solid var(--edge2);border-radius:6px;
-             color:var(--text);font-family:var(--mono);font-size:12px;padding:5px 8px;cursor:pointer">
-      <option value="">All duties</option>
-    </select>
+  <!-- Month / Year scroller -->
+  <div style="display:flex;align-items:center;gap:0;margin-bottom:14px;
+    background:var(--panel2);border:1px solid var(--edge2);border-radius:10px;overflow:hidden">
+    <button onclick="shiftDutiesMonth(-1)"
+      style="padding:10px 16px;background:none;border:none;color:var(--cyan);
+             font-size:18px;cursor:pointer;flex-shrink:0">‹</button>
+    <div style="flex:1;text-align:center">
+      <div id="duties-month-label"
+        style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text);letter-spacing:.5px"></div>
+      <div id="duties-month-range"
+        style="font-size:9px;color:var(--muted);margin-top:1px"></div>
+    </div>
+    <button onclick="shiftDutiesMonth(1)"
+      style="padding:10px 16px;background:none;border:none;color:var(--cyan);
+             font-size:18px;cursor:pointer;flex-shrink:0">›</button>
   </div>
-  <!-- Week-by-week previous duties toggle -->
-  <div id="prev-duties-toggle" style="display:none;margin-bottom:10px">
-    <button onclick="showMorePrevDuties()" id="prev-toggle-btn"
-      style="width:100%;padding:11px;background:var(--amber-dim);border:1px solid rgba(245,166,35,.4);
-      border-radius:9px;color:var(--amber);font-family:var(--mono);font-size:11px;
-      cursor:pointer;letter-spacing:.3px;text-align:center;font-weight:600">
-      📂 Show previous duties (last 7 days)
-    </button>
-  </div>
-  <div id="prev-duties-list"></div>
+
   <div id="duties-full-list"></div>
 </div>
 
@@ -1112,118 +1101,65 @@ function goPage(name, btn) {
   document.getElementById('scroller').scrollTop=0;
   if (name==='dash') { renderDash(); startDashClock(); }
   else if (name==='cumul') { renderCumul(); }
+  else if (name==='duties-full') { if (!_dutiesYear) initDutiesMonth(); renderDutiesFull(); }
   else { if(_dashTimer){clearInterval(_dashTimer);_dashTimer=null;} }
-
-  if (name==='duties-full') renderDutiesFull();
 }
 
 // ── Full duties page — shows upcoming/active, hides completed ──
-let _showPrev = false;
+// ── Duties month scroller state ──
+let _dutiesYear  = 0;
+let _dutiesMonth = 0; // 1-based
 
-// Week-paginated previous duties
-let _prevWeeksShown = 0;
-
-function showMorePrevDuties() {
-  _prevWeeksShown++;
-  const btn = document.getElementById('prev-toggle-btn');
-  const prevList = document.getElementById('prev-duties-list');
-  const nowReal = new Date();   // real epoch — for comparing with istDT() results
-  const nowIst  = nowIST();     // IST-shifted — for reading IST date components
-  const weeksMs = _prevWeeksShown * 7 * 86400000;
-  const cutEpoch = Date.UTC(nowIst.getUTCFullYear(), nowIst.getUTCMonth(), nowIst.getUTCDate()) - weeksMs;
-  const allSorted = [...duties].sort((a,b)=>a.date.localeCompare(b.date));
-
-  // Respect active month filter
-  const activeMonth = document.getElementById('duties-month-filter').value;
-  const monthFiltered = activeMonth ? allSorted.filter(d=>d.date.slice(0,7)===activeMonth) : allSorted;
-
-  const allPrev = monthFiltered.filter(d => { const dt = getDebriefDT(d); return dt && dt < nowReal; });
-  const visible = allPrev.filter(d => new Date(d.date+'T00:00:00Z').getTime() >= cutEpoch);
-  const hasMore = allPrev.some(d => new Date(d.date+'T00:00:00Z').getTime() < cutEpoch);
-  prevList.innerHTML = buildDutiesHTML(visible, allSorted);
-  prevList.classList.add('slide-open');
-  _showPrev = true;
-  if (hasMore) {
-    btn.textContent = `📂 ${_prevWeeksShown * 7} days shown — load 7 more`;
-    btn.style.opacity = '1';
-    btn.onclick = showMorePrevDuties;
-  } else {
-    btn.textContent = `📂 All ${allPrev.length} previous duties shown`;
-    btn.style.opacity = '0.6';
-    btn.onclick = null;
-  }
+function initDutiesMonth() {
+  const n = nowIST();
+  _dutiesYear  = n.getUTCFullYear();
+  _dutiesMonth = n.getUTCMonth() + 1;
 }
 
-function togglePrevDuties() { showMorePrevDuties(); }
+function shiftDutiesMonth(delta) {
+  _dutiesMonth += delta;
+  if (_dutiesMonth > 12) { _dutiesMonth = 1;  _dutiesYear++; }
+  if (_dutiesMonth < 1)  { _dutiesMonth = 12; _dutiesYear--; }
+  renderDutiesFull();
+}
 
 function renderDutiesFull() {
-  const el       = document.getElementById('duties-full-list');
-  const prevEl   = document.getElementById('prev-duties-list');
-  const toggleEl = document.getElementById('prev-duties-toggle');
-  const mSel     = document.getElementById('duties-month-filter');
+  // Init month if not set
+  if (!_dutiesYear) initDutiesMonth();
 
-  // ── allSorted = full unfiltered list for rest context ──
-  const allSorted = [...duties].sort((a,b)=>a.date.localeCompare(b.date));
+  const el = document.getElementById('duties-full-list');
+  const allSorted = [...duties].sort((a,b) => a.date.localeCompare(b.date));
 
-  // ── Populate month dropdown from all duties ──
-  const allMonths = [...new Set(duties.map(d=>d.date.slice(0,7)))].sort();
-  const curSel = mSel.value;
-  mSel.innerHTML = '<option value="">All duties</option>';
-  for (const m of allMonths) {
-    const [y,mo] = m.split('-');
-    const label = _MONTHS[+mo-1] + ' ' + y;
-    const opt = document.createElement('option');
-    opt.value = m; opt.textContent = label;
-    if (m === curSel) opt.selected = true;
-    mSel.appendChild(opt);
-  }
-  const activeMonth = mSel.value;
+  // Build YYYY-MM key for active month
+  const activeMonth = `${_dutiesYear}-${String(_dutiesMonth).padStart(2,'0')}`;
+
+  // Update scroller label
+  const labelEl = document.getElementById('duties-month-label');
+  const rangeEl = document.getElementById('duties-month-range');
+  if (labelEl) labelEl.textContent = _MONTHS[_dutiesMonth-1] + ' ' + _dutiesYear;
+
+  // Show duty count for this month in the range label
+  const monthDuties = allSorted.filter(d => d.date.slice(0,7) === activeMonth);
+  if (rangeEl) rangeEl.textContent = monthDuties.length
+    ? `${monthDuties.length} ${monthDuties.length===1?'duty':'duties'}`
+    : 'No duties this month';
 
   if (!duties.length) {
-    el.innerHTML='<div class="empty"><div class="empty-icon">🗂</div><div class="empty-text">No duties logged yet.<br>Use the Log page or import from Roster.</div></div>';
-    prevEl.innerHTML=''; toggleEl.style.display='none'; return;
+    el.innerHTML = '<div class="empty"><div class="empty-icon">🗂</div><div class="empty-text">No duties logged yet.<br>Use the Log page or import from Roster.</div></div>';
+    return;
   }
 
-  const now = new Date();  // real epoch for comparing with getDebriefDT() results
-  let sorted = activeMonth
-    ? allSorted.filter(d => d.date.slice(0,7) === activeMonth)
-    : allSorted;
-
-  // Split: completed (debrief in past) vs upcoming/active
-  const prevDuties     = [];
-  const upcomingDuties = [];
-  for (const d of sorted) {
-    const debDT = getDebriefDT(d);
-    if (debDT && debDT < now) prevDuties.push(d);
-    else upcomingDuties.push(d);
+  if (!monthDuties.length) {
+    el.innerHTML = `<div class="empty">
+      <div class="empty-icon">📅</div>
+      <div class="empty-text">No duties in ${_MONTHS[_dutiesMonth-1]} ${_dutiesYear}.<br>
+      Use ‹ › to navigate months.</div>
+    </div>`;
+    return;
   }
 
-  // Render upcoming into main list
-  el.innerHTML = buildDutiesHTML(upcomingDuties, allSorted);
-
-  if (!prevDuties.length) {
-    // No completed duties
-    prevEl.innerHTML = '';
-    toggleEl.style.display = 'none';
-  } else if (!upcomingDuties.length) {
-    // Only completed duties — show them all directly, no toggle needed
-    prevEl.innerHTML = buildDutiesHTML(prevDuties, allSorted);
-    prevEl.classList.add('slide-open');
-    toggleEl.style.display = 'none';
-  } else {
-    // Mix — show toggle for previous duties
-    prevEl.innerHTML = buildDutiesHTML(prevDuties, allSorted);
-    toggleEl.style.display = 'block';
-    _prevWeeksShown = 0;
-    const btn2 = document.getElementById('prev-toggle-btn');
-    if (btn2) {
-      btn2.textContent = '📂 Show previous duties (last 7 days)';
-      btn2.style.opacity = '1';
-      btn2.onclick = showMorePrevDuties;
-    }
-    if (_showPrev) prevEl.classList.add('slide-open');
-    else prevEl.classList.remove('slide-open');
-  }
+  // Render all duties for the month — past and upcoming together, sorted by date
+  el.innerHTML = buildDutiesHTML(monthDuties, allSorted);
 }
 
 function buildDutiesHTML(list, allSorted) {
@@ -2214,11 +2150,10 @@ function countLocalNights(restStartEpoch, restEndEpoch) {
 }
 
 // Find all weekly rest periods from logged duties
-// A weekly rest = gap between consecutive duties of ≥ 48h containing ≥ 2 local nights
+// Weekly rest = actual rest window (after travel margins) ≥ 48h with ≥ 2 local nights
 function findWeeklyRests() {
   if (duties.length < 2) return [];
 
-  // Sort all duties by date/report
   const sorted = [...duties]
     .filter(d => d.report && (d.debrief || d.dtype.startsWith('standby')))
     .sort((a,b) => a.date.localeCompare(b.date) || a.report.localeCompare(b.report));
@@ -2231,13 +2166,21 @@ function findWeeklyRests() {
     const nextRepDT = getReportDT(next);
     if (!prevDebDT || !nextRepDT) continue;
 
-    const gapH = (nextRepDT - prevDebDT) / 3600000;
+    // Apply travel margins — same logic as rest calculations elsewhere:
+    // Rest STARTS: home standby end → immediately; airport SB or flight → +45min travel home
+    // Rest ENDS:   next report − 45min travel to airport
+    const prevIsHomeSB  = prev.dtype === 'standby-home';
+    const travelHomeMins = prevIsHomeSB ? 0 : 45;
+    const restStart = new Date(prevDebDT.getTime() + travelHomeMins * 60000);
+    const restEnd   = new Date(nextRepDT.getTime()  - 45 * 60000);
+
+    const gapH = (restEnd - restStart) / 3600000;
     if (gapH < 48) continue; // not long enough for weekly rest
 
-    const localNights = countLocalNights(prevDebDT.getTime(), nextRepDT.getTime());
+    const localNights = countLocalNights(restStart.getTime(), restEnd.getTime());
     rests.push({
-      start:       prevDebDT,
-      end:         nextRepDT,
+      start:       restStart,
+      end:         restEnd,
       gapH:        +gapH.toFixed(1),
       localNights,
       qualifies:   gapH >= 48 && localNights >= 2,
@@ -3714,6 +3657,7 @@ const nm=nowIST();
 const curMonthVal=`${nm.getUTCFullYear()}-${String(nm.getUTCMonth()+1).padStart(2,'0')}`;
 document.getElementById('paste-month').value = curMonthVal;
 document.getElementById('ai-month').value    = curMonthVal;
+initDutiesMonth();
 tickClock();
 _clockTimer = setInterval(tickClock, 1000);
 renderDash();
