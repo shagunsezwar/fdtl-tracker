@@ -1279,7 +1279,26 @@ function buildDutiesHTML(list, allSorted) {
     }
 
     const cls = d.status||'ok';
-    const lbl = cls==='ok'?'Legal':cls==='warn'?'Advisory':'Illegal';
+
+    // Check if this duty violates the 168h weekly rest rule
+    const weeklyRests168 = findWeeklyRests();
+    const pastRests168   = weeklyRests168.filter(r => r.qualifies);
+    let weeklyRestViolation = false;
+    const dRepDT = getReportDT(d);
+    for (const wr of pastRests168) {
+      const deadline168 = new Date(wr.end.getTime() + 168*3600000);
+      const nextQR = weeklyRests168.find(r => r.qualifies && r.start > wr.end);
+      if (dRepDT && dRepDT > wr.end) {
+        if (!nextQR || dRepDT < nextQR.start) {
+          if (dRepDT > deadline168) { weeklyRestViolation = true; break; }
+        }
+      }
+    }
+
+    const effectiveCls = weeklyRestViolation ? 'bad' : cls;
+    const lbl = weeklyRestViolation
+      ? 'Illegal'
+      : effectiveCls==='ok'?'Legal':effectiveCls==='warn'?'Advisory':'Illegal';
     // Use actuals if available, otherwise planned
     const dispReport = d.actualReport || d.report || '—';
     const dispDebrief= d.actualDebrief || d.debrief || '—';
@@ -1290,7 +1309,7 @@ function buildDutiesHTML(list, allSorted) {
     const isStandbyCard = d.dtype && d.dtype.startsWith('standby');
 
     html += `<div class="swipe-wrap${isStandbyCard && !d.convertedFlight ? ' sb-wrap' : ''}" id="${wrapId}" style="margin-bottom:${i<list.length-1?'4px':'12px'}">
-      <div class="duty-card ${cls}" ontouchstart="swipeStart(event,'${wrapId}')" ontouchend="swipeEnd(event,'${wrapId}')">
+      <div class="duty-card ${effectiveCls}" ontouchstart="swipeStart(event,'${wrapId}')" ontouchend="swipeEnd(event,'${wrapId}')">
         <div class="dc-top">
           <div>
             <div class="dc-date">
@@ -1318,6 +1337,7 @@ function buildDutiesHTML(list, allSorted) {
         </div>
         ${(d.issues||[]).map(x=>`<div class="dc-issue">⛔ ${x}</div>`).join('')}
         ${(d.warns||[]).map(x=>`<div class="dc-warn-msg">⚠ ${x}</div>`).join('')}
+        ${weeklyRestViolation ? `<div class="dc-issue">⛔ 168h weekly rest rule violated (§2.10.6)</div>` : ''}
         ${d.dtype === 'standby-apt' && !d.convertedFlight ? `
         <div style="margin-top:8px;padding:8px 10px;background:rgba(0,180,255,.07);
           border-left:3px solid var(--cyan);border-radius:0 6px 6px 0;font-size:10px;
@@ -2223,7 +2243,10 @@ function renderWeeklyRest() {
   if (!el) return;
 
   const nowReal = new Date();
-  const rests = findWeeklyRests();
+  const rests   = findWeeklyRests();
+  const allSorted = [...duties]
+    .filter(d => d.report)
+    .sort((a,b) => a.date.localeCompare(b.date) || a.report.localeCompare(b.report));
 
   // Find the most recent qualifying weekly rest (end in the past)
   const pastRests = rests.filter(r => r.qualifies && r.end <= nowReal);
@@ -2232,19 +2255,41 @@ function renderWeeklyRest() {
   // Find the next upcoming qualifying rest (end in the future)
   const nextRest  = rests.find(r => r.qualifies && r.end > nowReal);
 
-  // Find any non-qualifying gaps (≥48h but lacking 2 local nights) — violations
+  // Find any non-qualifying gaps (≥48h but lacking 2 local nights)
   const violations = rests.filter(r => !r.qualifies && r.gapH >= 48);
+
+  // ── Check 168h violations ──
+  // For each completed weekly rest, find the next weekly rest after it.
+  // If a duty starts after the 168h deadline before a new weekly rest begins → violation.
+  const h168violations = [];
+  for (let i = 0; i < pastRests.length; i++) {
+    const thisRest = pastRests[i];
+    const deadline = new Date(thisRest.end.getTime() + 168*3600000);
+    // Find next qualifying rest after this one
+    const nextQualRest = rests.find(r => r.qualifies && r.start > thisRest.end);
+    const nextRestStart = nextQualRest ? nextQualRest.start : null;
+    // Find any duty that reports AFTER the 168h deadline but BEFORE the next rest starts
+    for (const d of allSorted) {
+      const repDT = getReportDT(d);
+      if (!repDT) continue;
+      if (repDT <= thisRest.end) continue; // before this rest ended
+      if (nextRestStart && repDT >= nextRestStart) continue; // after next rest started
+      if (repDT > deadline) {
+        h168violations.push({ duty: d, deadline, lastRestEnd: thisRest.end });
+      }
+    }
+  }
 
   let html = '';
 
   // ── Last weekly rest ──
   if (lastRest) {
-    const deadline = new Date(lastRest.end.getTime() + 168*3600000);
-    const msLeft   = deadline - nowReal;
-    const hLeft    = Math.floor(Math.max(0, msLeft)/3600000);
-    const mLeft    = Math.floor((Math.max(0, msLeft)%3600000)/60000);
-    const overdue  = msLeft <= 0;
-    const urgent   = !overdue && hLeft < 24;
+    const deadline    = new Date(lastRest.end.getTime() + 168*3600000);
+    const msLeft      = deadline - nowReal;
+    const hLeft       = Math.floor(Math.max(0, msLeft)/3600000);
+    const mLeft       = Math.floor((Math.max(0, msLeft)%3600000)/60000);
+    const overdue     = msLeft <= 0;
+    const urgent      = !overdue && hLeft < 48;
     const deadlineStr = fmtAsIST(deadline);
     const lastEndStr  = fmtAsIST(lastRest.end);
 
@@ -2278,7 +2323,23 @@ function renderWeeklyRest() {
     </div>`;
   }
 
-  // ── Upcoming weekly rest (if scheduled) ──
+  // ── 168h VIOLATIONS ──
+  if (h168violations.length) {
+    html += `<div style="padding:10px;background:var(--red-dim);border:1px solid rgba(255,77,77,.4);
+      border-radius:8px;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:6px">
+        ⛔ 168h RULE VIOLATED (§2.10.6)
+      </div>
+      ${h168violations.map(v=>`<div style="font-size:10px;color:var(--muted);margin-bottom:6px;
+        padding:6px 8px;background:rgba(255,77,77,.08);border-radius:5px">
+        <div style="color:var(--red);font-weight:600">${fmtDate(v.duty.date)} — ${v.duty.report} report</div>
+        <div>Duty starts after 168h deadline of <strong>${fmtAsIST(v.deadline)}</strong></div>
+        <div style="color:var(--amber)">Weekly rest required before this duty</div>
+      </div>`).join('')}
+    </div>`;
+  }
+
+  // ── Upcoming weekly rest ──
   if (nextRest) {
     html += `<div style="padding:10px;background:var(--panel3);border-radius:8px;margin-bottom:10px">
       <div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Upcoming weekly rest (planned)</div>
@@ -2291,7 +2352,7 @@ function renderWeeklyRest() {
     </div>`;
   }
 
-  // ── Violations (gaps ≥48h but < 2 local nights) ──
+  // ── Gaps missing local nights ──
   if (violations.length) {
     html += `<div style="padding:10px;background:var(--red-dim);border:1px solid rgba(255,77,77,.3);border-radius:8px;margin-bottom:10px">
       <div style="font-size:10px;color:var(--red);font-weight:700;margin-bottom:6px">⚠ Rest periods missing 2 local nights</div>
@@ -2305,7 +2366,7 @@ function renderWeeklyRest() {
   if (rests.length > 0) {
     html += `<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">All rest periods ≥48h</div>`;
     html += rests.map(r => {
-      const col = r.qualifies ? 'var(--green)' : 'var(--red)';
+      const col  = r.qualifies ? 'var(--green)' : 'var(--red)';
       const icon = r.qualifies ? '✓' : '⛔';
       return `<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;
         background:var(--panel3);border-radius:7px;margin-bottom:5px;
@@ -2321,6 +2382,7 @@ function renderWeeklyRest() {
 
   el.innerHTML = html || '<div style="font-size:11px;color:var(--muted);text-align:center;padding:12px">No duties logged yet</div>';
 }
+
 
 function renderCumulative() {
   const nowReal = new Date(); // real epoch for comparing with getDebriefDT results
@@ -2430,6 +2492,7 @@ function renderWeeklyRestWarning() {
 
   const nowReal = new Date();
   const rests   = findWeeklyRests();
+  const allSorted2 = [...duties].filter(d=>d.report).sort((a,b)=>a.date.localeCompare(b.date)||a.report.localeCompare(b.report));
   const pastRests = rests.filter(r => r.qualifies && r.end <= nowReal);
   const lastRest  = pastRests.length ? pastRests[pastRests.length-1] : null;
   if (!lastRest) { el.innerHTML=''; return; }
@@ -2441,19 +2504,30 @@ function renderWeeklyRestWarning() {
   const overdue  = msLeft <= 0;
   const urgent   = !overdue && hLeft < 48;
 
-  if (!overdue && !urgent) { el.innerHTML=''; return; }
+  // Check for 168h violation in logged duties
+  const nextQualRest = rests.find(r => r.qualifies && r.start > lastRest.end);
+  const violated = allSorted2.some(d => {
+    const repDT = getReportDT(d);
+    if (!repDT || repDT <= lastRest.end) return false;
+    if (nextQualRest && repDT >= nextQualRest.start) return false;
+    return repDT > deadline;
+  });
+
+  if (!violated && !overdue && !urgent) { el.innerHTML=''; return; }
 
   el.innerHTML = `<div style="margin-bottom:12px;padding:12px;
-    background:${overdue?'var(--red-dim)':'rgba(245,166,35,.1)'};
-    border:1px solid ${overdue?'rgba(255,77,77,.4)':'rgba(245,166,35,.4)'};
+    background:${violated||overdue?'var(--red-dim)':'rgba(245,166,35,.1)'};
+    border:1px solid ${violated||overdue?'rgba(255,77,77,.4)':'rgba(245,166,35,.4)'};
     border-radius:10px;cursor:pointer" onclick="goPage('cumul',document.querySelectorAll('.nb')[4])">
-    <div style="font-size:10px;font-weight:700;color:${overdue?'var(--red)':'var(--amber)'};letter-spacing:.5px;margin-bottom:4px">
+    <div style="font-size:10px;font-weight:700;color:${violated||overdue?'var(--red)':'var(--amber)'};letter-spacing:.5px;margin-bottom:4px">
       🛌 WEEKLY REST §2.10.6
     </div>
     <div style="font-size:12px;color:var(--text)">
-      ${overdue
-        ? '⛔ Weekly rest deadline EXCEEDED'
-        : `Next weekly rest must start within <strong>${hLeft}h ${String(mLeft).padStart(2,'0')}m</strong>`}
+      ${violated
+        ? '⛔ 168h rule violated — duty logged after deadline'
+        : overdue
+          ? '⛔ Weekly rest deadline EXCEEDED'
+          : `Next weekly rest must start within <strong>${hLeft}h ${String(mLeft).padStart(2,'0')}m</strong>`}
     </div>
     <div style="font-size:10px;color:var(--muted);margin-top:3px">Tap to view → Limits page</div>
   </div>`;
