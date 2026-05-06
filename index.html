@@ -2307,106 +2307,98 @@ function renderWeeklyRest() {
 
   let html = '';
 
-  // ── Last weekly rest ──
+  // ══ 1. LAST WEEKLY REST ══
+  html += `<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">1 · Last Weekly Rest</div>`;
+  if (lastRest) {
+    html += `<div style="padding:12px;background:var(--panel3);border-radius:8px;margin-bottom:14px;
+      border-left:3px solid var(--green)">
+      <div style="font-size:11px;color:var(--text);line-height:1.9">
+        Started: <strong>${fmtAsIST(lastRest.start)}</strong><br>
+        Ended: <strong>${fmtAsIST(lastRest.end)}</strong><br>
+        Duration: <strong style="color:var(--green)">${lastRest.gapStr}</strong>
+        · <strong style="color:var(--green)">${lastRest.localNights} local night${lastRest.localNights!==1?'s':''} 🌙</strong>
+      </div>
+    </div>`;
+  } else {
+    html += `<div style="padding:12px;background:var(--panel3);border-radius:8px;margin-bottom:14px;
+      font-size:11px;color:var(--muted)">
+      No completed weekly rest found yet.<br>
+      A weekly rest = ≥48h gap with 2 local nights between duties.
+    </div>`;
+  }
+
+  // ══ 2. NEXT WEEKLY REST (planned from logged duties) ══
+  html += `<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">2 · Next Weekly Rest</div>`;
+  if (nextRest) {
+    const nsMs  = nextRest.start - nowReal;
+    const nsH   = Math.floor(Math.max(0,nsMs)/3600000);
+    const nsM   = Math.floor((Math.max(0,nsMs)%3600000)/60000);
+    const nsStr = nsMs > 0 ? `Starts in ${nsH}h ${String(nsM).padStart(2,'0')}m` : 'Currently in weekly rest';
+    html += `<div style="padding:12px;background:var(--panel3);border-radius:8px;margin-bottom:14px;
+      border-left:3px solid var(--cyan)">
+      <div style="font-size:11px;color:var(--text);line-height:1.9">
+        Starts: <strong style="color:var(--cyan)">${fmtAsIST(nextRest.start)}</strong><br>
+        Ends: <strong>${fmtAsIST(nextRest.end)}</strong><br>
+        Duration: <strong style="color:var(--green)">${nextRest.gapStr}</strong>
+        · <strong style="color:var(--green)">${nextRest.localNights} local night${nextRest.localNights!==1?'s':''} 🌙</strong><br>
+        <span style="color:var(--muted)">${nsStr}</span>
+      </div>
+    </div>`;
+  } else {
+    html += `<div style="padding:12px;background:var(--panel3);border-radius:8px;margin-bottom:14px;
+      font-size:11px;color:var(--muted)">
+      No upcoming weekly rest found in logged duties.<br>Log future duties to see next planned rest.
+    </div>`;
+  }
+
+  // ══ 3. NEXT MANDATORY DEADLINE ══
+  html += `<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">3 · Next Mandatory Weekly Rest Must Start By</div>`;
   if (lastRest) {
     const deadline    = new Date(lastRest.end.getTime() + 168*3600000);
     const msLeft      = deadline - nowReal;
-    const hLeft       = Math.floor(Math.max(0, msLeft)/3600000);
-    const mLeft       = Math.floor((Math.max(0, msLeft)%3600000)/60000);
+    const hLeft       = Math.floor(Math.max(0,msLeft)/3600000);
+    const mLeft       = Math.floor((Math.max(0,msLeft)%3600000)/60000);
     const overdue     = msLeft <= 0;
     const urgent      = !overdue && hLeft < 48;
-    const deadlineStr = fmtAsIST(deadline);
-    const lastEndStr  = fmtAsIST(lastRest.end);
-
-    html += `<div style="padding:10px;background:var(--panel3);border-radius:8px;margin-bottom:10px">
-      <div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Last weekly rest</div>
-      <div style="font-size:11px;color:var(--text);line-height:1.8">
-        Ended: <strong>${lastEndStr}</strong><br>
-        Duration: <strong style="color:var(--green)">${lastRest.gapStr}</strong>
-        · Local nights: <strong style="color:var(--green)">${lastRest.localNights} 🌙</strong>
+    const borderCol   = overdue?'var(--red)':urgent?'var(--amber)':'var(--green)';
+    const textCol     = overdue?'var(--red)':urgent?'var(--amber)':'var(--green)';
+    const bg          = overdue?'var(--red-dim)':urgent?'rgba(245,166,35,.1)':'var(--green-dim)';
+    html += `<div style="padding:12px;background:${bg};border-radius:8px;margin-bottom:10px;
+      border-left:3px solid ${borderCol}">
+      <div style="font-size:18px;font-weight:700;color:${textCol};font-family:var(--mono);margin-bottom:6px">
+        ${fmtAsIST(deadline)}
       </div>
-    </div>
-    <div style="padding:10px;background:${overdue?'var(--red-dim)':urgent?'rgba(245,166,35,.1)':'var(--green-dim)'};
-      border:1px solid ${overdue?'rgba(255,77,77,.3)':urgent?'rgba(245,166,35,.3)':'rgba(0,230,118,.2)'};
-      border-radius:8px;margin-bottom:10px">
-      <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">
-        Next weekly rest must START by
-      </div>
-      <div style="font-size:16px;font-weight:700;color:${overdue?'var(--red)':urgent?'var(--amber)':'var(--green)'};font-family:var(--mono)">
-        ${deadlineStr}
-      </div>
-      <div style="font-size:11px;margin-top:4px;color:${overdue?'var(--red)':urgent?'var(--amber)':'var(--muted)'}">
+      <div style="font-size:11px;color:${overdue||urgent?textCol:'var(--muted)'};line-height:1.7">
         ${overdue
-          ? '⛔ 168h deadline EXCEEDED — weekly rest overdue!'
-          : `⏱ ${hLeft}h ${String(mLeft).padStart(2,'0')}m remaining`}
-      </div>
-      <div style="font-size:9px;color:var(--muted);margin-top:4px">168h from end of last rest · §2.10.6</div>
-    </div>`;
-  } else {
-    html += `<div style="padding:10px;background:var(--panel3);border-radius:8px;margin-bottom:10px;font-size:11px;color:var(--muted)">
-      No completed weekly rest found yet.<br>A weekly rest = ≥48h gap with 2 local nights between duties.
-    </div>`;
-  }
-
-  // ── 168h VIOLATIONS ──
-  if (h168violations.length) {
-    html += `<div style="padding:10px;background:var(--red-dim);border:1px solid rgba(255,77,77,.4);
-      border-radius:8px;margin-bottom:10px">
-      <div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:6px">
-        ⛔ 168h RULE VIOLATED (§2.10.6)
-      </div>
-      ${h168violations.map(v=>`<div style="font-size:10px;color:var(--muted);margin-bottom:6px;
-        padding:6px 8px;background:rgba(255,77,77,.08);border-radius:5px">
-        <div style="color:var(--red);font-weight:600">${fmtDate(v.duty.date)} — ${v.duty.report} report</div>
-        <div>Rest after this duty starts <strong>${fmtAsIST(v.restAfterDutyStart)}</strong> — after deadline <strong>${fmtAsIST(v.deadline)}</strong></div>
-        <div style="color:var(--amber)">Weekly rest required before this duty</div>
-      </div>`).join('')}
-    </div>`;
-  }
-
-  // ── Upcoming weekly rest ──
-  if (nextRest) {
-    html += `<div style="padding:10px;background:var(--panel3);border-radius:8px;margin-bottom:10px">
-      <div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Upcoming weekly rest (planned)</div>
-      <div style="font-size:11px;color:var(--text);line-height:1.8">
-        Starts: <strong>${fmtAsIST(nextRest.start)}</strong><br>
-        Ends: <strong>${fmtAsIST(nextRest.end)}</strong><br>
-        Duration: <strong style="color:var(--green)">${nextRest.gapStr}</strong>
-        · Local nights: <strong style="color:var(--green)">${nextRest.localNights} 🌙</strong>
+          ? '⛔ DEADLINE EXCEEDED — weekly rest overdue!'
+          : urgent
+            ? `⚠ ${hLeft}h ${String(mLeft).padStart(2,'0')}m remaining — rest due soon`
+            : `⏱ ${hLeft}h ${String(mLeft).padStart(2,'0')}m remaining`}
+        <br><span style="font-size:9px;color:var(--muted)">168h from end of last rest · §2.10.6</span>
       </div>
     </div>`;
-  }
-
-  // ── Gaps missing local nights ──
-  if (violations.length) {
-    html += `<div style="padding:10px;background:var(--red-dim);border:1px solid rgba(255,77,77,.3);border-radius:8px;margin-bottom:10px">
-      <div style="font-size:10px;color:var(--red);font-weight:700;margin-bottom:6px">⚠ Rest periods missing 2 local nights</div>
-      ${violations.map(v=>`<div style="font-size:10px;color:var(--muted);margin-bottom:4px">
-        ${fmtAsIST(v.start)} → ${fmtAsIST(v.end)} · ${v.gapStr} · ${v.localNights} local night${v.localNights!==1?'s':''} (need 2)
-      </div>`).join('')}
-    </div>`;
-  }
-
-  // ── All rest history ──
-  if (rests.length > 0) {
-    html += `<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">All rest periods ≥48h</div>`;
-    html += rests.map(r => {
-      const col  = r.qualifies ? 'var(--green)' : 'var(--red)';
-      const icon = r.qualifies ? '✓' : '⛔';
-      return `<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;
-        background:var(--panel3);border-radius:7px;margin-bottom:5px;
-        border-left:3px solid ${col}">
-        <span style="color:${col};font-size:13px">${icon}</span>
-        <div style="flex:1;font-size:10px">
-          <div style="color:var(--text)">${fmtAsIST(r.start)} → ${fmtAsIST(r.end)}</div>
-          <div style="color:var(--muted)">${r.gapStr} · ${r.localNights} local night${r.localNights!==1?'s':''} ${r.qualifies?'· Weekly rest ✓':'· <span style="color:var(--red)">Missing local nights</span>'}</div>
-        </div>
+    if (h168violations.length) {
+      html += `<div style="padding:10px;background:var(--red-dim);border:1px solid rgba(255,77,77,.4);
+        border-radius:8px;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:6px">⛔ 168h RULE VIOLATED (§2.10.6)</div>
+        ${h168violations.map(v=>`<div style="font-size:10px;color:var(--muted);margin-bottom:6px;
+          padding:6px 8px;background:rgba(255,77,77,.08);border-radius:5px">
+          <div style="color:var(--red);font-weight:600">${fmtDate(v.duty.date)} — ${v.duty.report} report</div>
+          <div>Rest after duty starts <strong>${fmtAsIST(v.restAfterDutyStart)}</strong> — after deadline <strong>${fmtAsIST(v.deadline)}</strong></div>
+          <div style="color:var(--amber)">Weekly rest required before this duty</div>
+        </div>`).join('')}
       </div>`;
-    }).join('');
+    }
+  } else {
+    html += `<div style="padding:12px;background:var(--panel3);border-radius:8px;margin-bottom:10px;
+      font-size:11px;color:var(--muted)">
+      Cannot calculate — no completed weekly rest on record yet.
+    </div>`;
   }
 
-  el.innerHTML = html || '<div style="font-size:11px;color:var(--muted);text-align:center;padding:12px">No duties logged yet</div>';
+  el.innerHTML = html;
 }
+
 
 
 function renderCumulative() {
@@ -3212,32 +3204,68 @@ Save anyway?`
   const d={id:Date.now(),date,debriefDate,route,report,debrief,engoff,block,landings:land,night,crew,dtype,fdp,status,issues,warns,rosterType:'manual',travelPenalty};
   duties.push(d); duties.sort((a,b)=>a.date.localeCompare(b.date)); persist(duties);
 
+  // Check 168h weekly rest violation for this newly logged duty
+  // Re-fetch the duty by id after sort (position may have changed)
+  const newDutyIdx    = duties.findIndex(x => x.id === d.id);
+  const newDuty       = duties[newDutyIdx];
+  const weeklyRests168chk = findWeeklyRests();
+  const pastRests168chk   = weeklyRests168chk.filter(r => r.qualifies);
+  let weeklyViolation168  = false;
+  const dRepDT2 = getReportDT(newDuty);
+  const dDebDT2 = getDebriefDT(newDuty);
+  for (const wr of pastRests168chk) {
+    const dl168 = new Date(wr.end.getTime() + 168*3600000);
+    const nqr   = weeklyRests168chk.find(r => r.qualifies && r.start > wr.end);
+    if (!dRepDT2 || dRepDT2 <= wr.end) continue;
+    if (nqr && dRepDT2 >= nqr.start) continue;
+    if (!dDebDT2) continue;
+    const isHomeSB2  = newDuty.dtype === 'standby-home';
+    const restAfter2 = new Date(dDebDT2.getTime() + (isHomeSB2?0:45)*60000);
+    const covered2   = weeklyRests168chk.some(r => r.qualifies && r.start > wr.end && r.start <= restAfter2);
+    if (restAfter2 > dl168 && !covered2) { weeklyViolation168 = true; break; }
+  }
+
+  // Effective status including 168h check
+  const effectiveStatus = weeklyViolation168 ? 'bad' : status;
+  const effectiveIssues = weeklyViolation168
+    ? [...issues, '168h weekly rest rule violated (§2.10.6)']
+    : issues;
+
+  // Update stored duty status if 168h violation found
+  if (weeklyViolation168 && status !== 'bad') {
+    const idx = duties.findIndex(x => x.id === d.id);
+    if (idx !== -1) {
+      duties[idx].status = 'bad';
+      duties[idx].issues = effectiveIssues;
+      persist(duties);
+    }
+  }
+
   // Show result — auto-dismiss in 3s if legal/advisory, stay if illegal
-  const cls=status==='ok'?'green':status==='warn'?'amber':'red';
+  const cls = effectiveStatus==='ok'?'green':effectiveStatus==='warn'?'amber':'red';
   const resultEl = document.getElementById('log-result');
-  if (status === 'bad') {
-    // Illegal — stay visible, show full details
+  if (effectiveStatus === 'bad') {
     resultEl.innerHTML=`<div class="pcard" style="border-color:var(--red);margin-bottom:12px">
       <div style="font-family:var(--sans);font-weight:700;margin-bottom:8px;color:var(--red)">⛔ Illegal duty — logged with violations</div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:6px">
         Route: <strong style="color:var(--text)">${route||'—'}</strong> · ${fmtDate(date)}<br>
         Report: <strong>${report}</strong> · Debrief: <strong>${debrief}</strong> · FDP: <strong>${fmtH(fdp)}</strong>
       </div>
-      ${issues.map(x=>`<div style="font-size:11px;color:var(--red);margin-top:4px;padding:4px 8px;background:rgba(255,77,77,.08);border-radius:5px">⛔ ${x}</div>`).join('')}
+      ${effectiveIssues.map(x=>`<div style="font-size:11px;color:var(--red);margin-top:4px;padding:4px 8px;background:rgba(255,77,77,.08);border-radius:5px">⛔ ${x}</div>`).join('')}
       ${warns.map(x=>`<div style="font-size:11px;color:var(--amber);margin-top:4px;padding:4px 8px;background:rgba(245,166,35,.08);border-radius:5px">⚠ ${x}</div>`).join('')}
       <div style="margin-top:10px;font-size:10px;color:var(--muted)">Duty saved. Go to Duties tab to edit or delete.</div>
     </div>`;
   } else {
     // Legal or advisory — brief toast, auto-dismiss after 3 seconds
     resultEl.innerHTML=`<div style="
-      background:${status==='ok'?'var(--green-dim)':'var(--amber-dim)'};
-      border:1px solid ${status==='ok'?'rgba(0,230,118,.35)':'rgba(245,166,35,.35)'};
+      background:${effectiveStatus==='ok'?'var(--green-dim)':'var(--amber-dim)'};
+      border:1px solid ${effectiveStatus==='ok'?'rgba(0,230,118,.35)':'rgba(245,166,35,.35)'};
       border-radius:10px;padding:12px 14px;margin-bottom:12px;
       display:flex;align-items:center;gap:10px;
       animation:fadeUp .2s ease">
-      <span style="font-size:20px">${status==='ok'?'✅':'⚠️'}</span>
+      <span style="font-size:20px">${effectiveStatus==='ok'?'✅':'⚠️'}</span>
       <div>
-        <div style="font-family:var(--sans);font-weight:700;font-size:13px">${status==='ok'?'Duty logged — Legal':'Duty logged — Advisory'}</div>
+        <div style="font-family:var(--sans);font-weight:700;font-size:13px">${effectiveStatus==='ok'?'Duty logged — Legal':'Duty logged — Advisory'}</div>
         <div style="font-size:11px;color:var(--muted);margin-top:2px">${route||d.dtype||'—'} · ${fmtDate(date)} · FDP ${fmtH(fdp)}</div>
         ${warns.map(x=>`<div style="font-size:10px;color:var(--amber);margin-top:2px">⚠ ${x}</div>`).join('')}
       </div>
