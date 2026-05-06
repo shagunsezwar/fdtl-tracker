@@ -1272,7 +1272,16 @@ function buildDutiesHTML(list, allSorted) {
             ${startLabel}: <strong>${fmt2(rStart)}</strong> → Ends: ${fmt2(rEnd)}<br>
             Earliest legal report: <strong style="color:${legalOk?'var(--green)':'var(--red)'}">${elStr}</strong>
             ${penalty?' <span style="color:var(--amber)">+30m §2.10.5</span>':''}
-            <br>${ok?'✓ Compliant':'⛔ '+(restOk?'Reported before earliest legal time':'Rest below minimum')}
+            <br>${ok ? '✓ Compliant' : (() => {
+              if (!restOk) {
+                const minMins = (minR*60) + (penalty?30:0);
+                const actualMins = Math.round(restH * 60);
+                const shortMins = minMins - actualMins;
+                const shortH = Math.floor(shortMins/60), shortM = shortMins%60;
+                return `⛔ Rest below minimum · Need <strong style="color:var(--red)">${shortH>0?shortH+'h ':''}${String(shortM).padStart(2,'0')}m more</strong>`;
+              }
+              return '⛔ Reported before earliest legal time';
+            })()}
           </div>
         </div>
       </div>`;
@@ -1281,18 +1290,22 @@ function buildDutiesHTML(list, allSorted) {
     const cls = d.status||'ok';
 
     // Check if this duty violates the 168h weekly rest rule
+    // Violation = rest that follows this duty starts after the 168h deadline
     const weeklyRests168 = findWeeklyRests();
     const pastRests168   = weeklyRests168.filter(r => r.qualifies);
     let weeklyRestViolation = false;
     const dRepDT = getReportDT(d);
+    const dDebDT = getDebriefDT(d);
     for (const wr of pastRests168) {
       const deadline168 = new Date(wr.end.getTime() + 168*3600000);
       const nextQR = weeklyRests168.find(r => r.qualifies && r.start > wr.end);
-      if (dRepDT && dRepDT > wr.end) {
-        if (!nextQR || dRepDT < nextQR.start) {
-          if (dRepDT > deadline168) { weeklyRestViolation = true; break; }
-        }
-      }
+      if (!dRepDT || dRepDT <= wr.end) continue;
+      if (nextQR && dRepDT >= nextQR.start) continue;
+      if (!dDebDT) continue;
+      const isHomeSB168 = d.dtype === 'standby-home';
+      const restAfter168 = new Date(dDebDT.getTime() + (isHomeSB168 ? 0 : 45)*60000);
+      const alreadyCov = weeklyRests168.some(r => r.qualifies && r.start > wr.end && r.start <= restAfter168);
+      if (restAfter168 > deadline168 && !alreadyCov) { weeklyRestViolation = true; break; }
     }
 
     const effectiveCls = weeklyRestViolation ? 'bad' : cls;
@@ -2259,23 +2272,35 @@ function renderWeeklyRest() {
   const violations = rests.filter(r => !r.qualifies && r.gapH >= 48);
 
   // ── Check 168h violations ──
-  // For each completed weekly rest, find the next weekly rest after it.
-  // If a duty starts after the 168h deadline before a new weekly rest begins → violation.
+  // The next weekly rest must START (= duty debrief + travel home) by the deadline.
+  // So for each duty after a weekly rest, check if the rest that FOLLOWS it
+  // starts too late (i.e. debrief + travel > deadline).
   const h168violations = [];
   for (let i = 0; i < pastRests.length; i++) {
     const thisRest = pastRests[i];
     const deadline = new Date(thisRest.end.getTime() + 168*3600000);
     // Find next qualifying rest after this one
     const nextQualRest = rests.find(r => r.qualifies && r.start > thisRest.end);
-    const nextRestStart = nextQualRest ? nextQualRest.start : null;
-    // Find any duty that reports AFTER the 168h deadline but BEFORE the next rest starts
+
+    // Check every duty between this rest and the next qualifying rest
     for (const d of allSorted) {
       const repDT = getReportDT(d);
-      if (!repDT) continue;
-      if (repDT <= thisRest.end) continue; // before this rest ended
-      if (nextRestStart && repDT >= nextRestStart) continue; // after next rest started
-      if (repDT > deadline) {
-        h168violations.push({ duty: d, deadline, lastRestEnd: thisRest.end });
+      const debDT = getDebriefDT(d);
+      if (!repDT || !debDT) continue;
+      if (repDT <= thisRest.end) continue; // before or during this rest
+      if (nextQualRest && repDT >= nextQualRest.prevDuty && repDT > nextQualRest.start) continue;
+
+      // The rest that would follow this duty starts at: debDT + 45min travel (or 0 for home SB)
+      const isHomeSB = d.dtype === 'standby-home';
+      const restAfterDutyStart = new Date(debDT.getTime() + (isHomeSB ? 0 : 45) * 60000);
+
+      // If that rest start is after the deadline → this duty busts the 168h rule
+      if (restAfterDutyStart > deadline) {
+        // Only flag if no qualifying rest has already started before this duty's rest start
+        const alreadyCovered = rests.some(r => r.qualifies && r.start > thisRest.end && r.start <= restAfterDutyStart);
+        if (!alreadyCovered) {
+          h168violations.push({ duty: d, deadline, restAfterDutyStart, lastRestEnd: thisRest.end });
+        }
       }
     }
   }
@@ -2333,7 +2358,7 @@ function renderWeeklyRest() {
       ${h168violations.map(v=>`<div style="font-size:10px;color:var(--muted);margin-bottom:6px;
         padding:6px 8px;background:rgba(255,77,77,.08);border-radius:5px">
         <div style="color:var(--red);font-weight:600">${fmtDate(v.duty.date)} — ${v.duty.report} report</div>
-        <div>Duty starts after 168h deadline of <strong>${fmtAsIST(v.deadline)}</strong></div>
+        <div>Rest after this duty starts <strong>${fmtAsIST(v.restAfterDutyStart)}</strong> — after deadline <strong>${fmtAsIST(v.deadline)}</strong></div>
         <div style="color:var(--amber)">Weekly rest required before this duty</div>
       </div>`).join('')}
     </div>`;
@@ -2508,9 +2533,13 @@ function renderWeeklyRestWarning() {
   const nextQualRest = rests.find(r => r.qualifies && r.start > lastRest.end);
   const violated = allSorted2.some(d => {
     const repDT = getReportDT(d);
-    if (!repDT || repDT <= lastRest.end) return false;
+    const debDT = getDebriefDT(d);
+    if (!repDT || !debDT || repDT <= lastRest.end) return false;
     if (nextQualRest && repDT >= nextQualRest.start) return false;
-    return repDT > deadline;
+    const isHomeSB = d.dtype === 'standby-home';
+    const restAfter = new Date(debDT.getTime() + (isHomeSB ? 0 : 45)*60000);
+    const alreadyCovered = rests.some(r => r.qualifies && r.start > lastRest.end && r.start <= restAfter);
+    return restAfter > deadline && !alreadyCovered;
   });
 
   if (!violated && !overdue && !urgent) { el.innerHTML=''; return; }

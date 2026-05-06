@@ -1,7 +1,7 @@
 // IndiGo FDTL Monitor — Service Worker
 // Caches everything for offline use
 
-const CACHE = 'fdtl-v11';
+const CACHE = 'fdtl-v13';
 const ASSETS = [
   './',
   './index.html',
