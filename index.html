@@ -1350,7 +1350,7 @@ function buildDutiesHTML(list, allSorted) {
         </div>
         ${(d.issues||[]).map(x=>`<div class="dc-issue">⛔ ${x}</div>`).join('')}
         ${(d.warns||[]).map(x=>`<div class="dc-warn-msg">⚠ ${x}</div>`).join('')}
-        ${weeklyRestViolation ? `<div class="dc-issue">⛔ 168h weekly rest rule violated (§2.10.6)</div>` : ''}
+        ${weeklyRestViolation && !(d.issues||[]).some(x=>x.includes('168h')) ? `<div class="dc-issue">⛔ 168h weekly rest rule violated (§2.10.6)</div>` : ''}
         ${d.dtype === 'standby-apt' && !d.convertedFlight ? `
         <div style="margin-top:8px;padding:8px 10px;background:rgba(0,180,255,.07);
           border-left:3px solid var(--cyan);border-radius:0 6px 6px 0;font-size:10px;
@@ -1676,7 +1676,16 @@ function getActiveDutyReportStr() {
 
 function recalcFDP() {
   const tag = document.getElementById('fdp-mode-tag');
+  const fdpCard = document.getElementById('fdp-limits-card');
   const {reportStr: rptStr, duty: activeDuty} = getActiveDutyReportStr();
+
+  // Hide FDP limits table entirely when no duties logged or no active/upcoming duty
+  if (!duties.length || !rptStr) {
+    if (fdpCard) fdpCard.style.display = 'none';
+    if (tag) { tag.textContent = 'Day duty'; tag.className = 'pctag'; }
+    return;
+  }
+  if (fdpCard) fdpCard.style.display = '';
 
   // Night mode: use duty's stored field. Do NOT project from report time.
   const nightMode = activeDuty ? (activeDuty.night === 'yes') : false;
@@ -1918,9 +1927,13 @@ function renderNextReport() {
     const flightRoute   = cf ? cf.route   : (currentDuty.route||'—');
     const fdpForLimits  = cf ? cf.totalFDP : null;
 
-    // Planned engine-off = logged debrief − 30min (what was scheduled)
-    // Countdown runs to actual debrief time
-    const plannedEngOff = addMins(flightDebrief, -30);
+    // Use actual debrief if entered, otherwise planned
+    const hasActuals   = !!(currentDuty.actualDebrief);
+    const debriefForEngOff = hasActuals
+      ? (currentDuty.actualDebrief)
+      : flightDebrief;
+    const engOffLabel  = hasActuals ? 'Actual eng-off' : 'Planned eng-off';
+    const plannedEngOff = addMins(debriefForEngOff, -30);
     const debDTreal = getDebriefDT(currentDuty);  // real UTC epoch
     const remainMs  = debDTreal - now;
     const remH = Math.floor(Math.max(0,remainMs)/3600000);
@@ -1975,7 +1988,7 @@ function renderNextReport() {
       <div class="nr-time">${flightRoute}</div>
       <div class="nr-sub">
         Report: <strong>${flightReport}</strong> · Debrief: <strong>${flightDebrief}</strong><br>
-        Planned eng-off: <strong style="color:${expiredFDP?'var(--red)':'var(--cyan)'}">${plannedEngOff}</strong>
+        ${engOffLabel}: <strong style="color:${expiredFDP?'var(--red)':'var(--cyan)'}">${plannedEngOff}</strong>
         ${hasWOCL ? ' <span style="font-size:10px;color:var(--amber);background:rgba(255,170,0,.15);padding:1px 6px;border-radius:4px;vertical-align:middle">WOCL reduced</span>' : ''}<br>
         ${!expiredFDP
           ? `⏱ <strong style="color:${remH<1?'var(--red)':remH<2?'var(--amber)':'var(--green)'}">${remH}h ${String(remM).padStart(2,'0')}m to debrief</strong>`
@@ -2103,16 +2116,23 @@ function renderNextReport() {
     } else {
       // ── Regular flight duty ──
       const nightTag = nextDuty.night==='yes'
-        ? '<span style="color:var(--amber);font-size:10px">🌙 Night duty</span>' : '';
+        ? ' · <span style="color:var(--amber);font-size:10px">🌙 Night</span>' : '';
       cardBody = `
-        <div class="nr-time">${nextDuty.report} · ${nextDuty.route||'—'}</div>
-        ${nightTag ? `<div class="nr-sub">${nightTag}</div>` : ''}`;
+        <div style="font-size:28px;font-weight:700;font-family:var(--mono);
+          white-space:nowrap;overflow-x:auto;overflow-y:hidden;
+          letter-spacing:-0.5px;margin-bottom:6px;padding-bottom:2px">
+          ${nextDuty.route||'—'}
+        </div>
+        <div class="nr-sub">
+          Report: <strong style="color:var(--cyan)">${nextDuty.report}</strong>
+          · Debrief: <strong>${nextDuty.debrief||'—'}</strong>${nightTag}
+        </div>`;
     }
 
     el.innerHTML = `<div class="nr-box">
       <div class="nr-label">${dutyIcon} Next duty — ${fmtDate(nextDuty.date)}</div>
       <div style="margin-bottom:4px">${dutyTypeLabel}</div>
-      ${isNextSB || hasCF ? '' : `<div style="margin-bottom:4px"><strong style="color:var(--amber)">⏳ ${diffH}h ${String(diffM).padStart(2,'0')}m to report</strong></div>`}
+      ${isNextSB || hasCF ? '' : `<div style="margin-bottom:6px"><strong style="color:var(--amber);font-size:16px">⏳ ${diffH}h ${String(diffM).padStart(2,'0')}m to report</strong></div>`}
       ${cardBody}
       ${legalRepStr}
     </div>`;
@@ -2352,7 +2372,7 @@ function renderWeeklyRest() {
   }
 
   // ══ 3. NEXT MANDATORY DEADLINE ══
-  html += `<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">3 · Next Mandatory Weekly Rest Must Start By</div>`;
+  html += `<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">3 · Next Mandatory Weekly Rest Must Start By Or Before</div>`;
   if (lastRest) {
     const deadline    = new Date(lastRest.end.getTime() + 168*3600000);
     const msLeft      = deadline - nowReal;
