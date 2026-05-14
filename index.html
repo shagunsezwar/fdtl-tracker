@@ -92,7 +92,91 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--m
 .nb.on{color:var(--cyan)}
 .nb.on .ni-dot{background:var(--cyan)}
 
-/* ── Panel cards ── */
+/* ── Flight Board ── */
+#page-board { overflow-y:auto; }
+.board-idle { color:var(--muted); }
+.board-route {
+  font-family:var(--mono);
+  font-size:clamp(32px,8vw,72px);
+  font-weight:800;
+  letter-spacing:-1px;
+  color:var(--text);
+  line-height:1.1;
+  word-break:break-all;
+}
+.board-plane-track {
+  width:100%;
+  max-width:500px;
+  position:relative;
+  height:44px;
+  margin:18px auto 6px;
+}
+.board-plane-bar {
+  position:absolute;
+  top:50%;
+  left:0; right:0;
+  height:2px;
+  background:linear-gradient(90deg,var(--cyan),rgba(0,230,118,.3));
+  transform:translateY(-50%);
+  border-radius:2px;
+}
+.board-plane-dot {
+  position:absolute;
+  top:50%;
+  transform:translate(-50%,-50%);
+  font-size:28px;
+  transition:left 1s linear;
+  filter:drop-shadow(0 0 8px rgba(0,200,255,.6));
+}
+.board-apt {
+  font-family:var(--mono);
+  font-size:13px;
+  color:var(--muted);
+  letter-spacing:1px;
+  display:flex;
+  justify-content:space-between;
+  width:100%;
+  max-width:500px;
+  margin:0 auto;
+}
+.board-layover {
+  margin-top:20px;
+  padding:12px 20px;
+  background:rgba(245,166,35,.12);
+  border:1px solid rgba(245,166,35,.35);
+  border-radius:12px;
+  font-size:14px;
+  color:var(--amber);
+  font-family:var(--mono);
+  letter-spacing:.5px;
+}
+.board-time-row {
+  margin-top:16px;
+  font-size:15px;
+  color:var(--muted);
+  font-family:var(--mono);
+  line-height:2;
+}
+.board-time-row strong { color:var(--text); font-size:18px; }
+.board-countdown {
+  margin-top:10px;
+  font-size:28px;
+  font-weight:700;
+  font-family:var(--mono);
+  color:var(--cyan);
+}
+.board-status-pill {
+  display:inline-block;
+  padding:6px 18px;
+  border-radius:20px;
+  font-size:11px;
+  font-family:var(--mono);
+  font-weight:700;
+  letter-spacing:1px;
+  text-transform:uppercase;
+  margin-bottom:16px;
+}
+
 .pcard{
   background:var(--panel);border:1px solid var(--edge);
   border-radius:12px;padding:14px;margin-bottom:12px;
@@ -741,6 +825,15 @@ Debriefing time: 2300"></textarea>
 <!-- ═══════════════════════════════════
      PAGE 5 — GUIDE
 ═══════════════════════════════════ -->
+<!-- ═══════════════════════════════════
+     PAGE 7 — FLIGHT BOARD
+═══════════════════════════════════ -->
+<div id="page-board" class="page" style="padding:0;background:var(--bg)">
+  <div id="board-content" style="min-height:100vh;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;padding:24px 16px;text-align:center">
+  </div>
+</div>
+
 <div id="page-guide" class="page">
 
   <div class="slbl">How to use this app</div>
@@ -825,6 +918,7 @@ Debriefing time: 2300"></textarea>
   <button class="nb" onclick="goPage('log',this)"><span class="ni">✏️</span>Log</button>
   <button class="nb" onclick="goPage('duties-full',this)"><span class="ni">🗂</span>Duties</button>
   <button class="nb" onclick="goPage('cumul',this)"><span class="ni">📈</span>Limits</button>
+  <button class="nb" onclick="goPage('board',this)"><span class="ni">✈</span>Board</button>
   <button class="nb" onclick="goPage('guide',this)"><span class="ni">📖</span>Guide</button>
 </nav>
 </div><!-- app -->
@@ -1116,6 +1210,7 @@ function goPage(name, btn) {
   if (name==='dash') { renderDash(); startDashClock(); }
   else if (name==='cumul') { renderCumul(); }
   else if (name==='duties-full') { if (!_dutiesYear) initDutiesMonth(); renderDutiesFull(); }
+  else if (name==='board') { renderFlightBoard(); startBoardClock(); }
   else { if(_dashTimer){clearInterval(_dashTimer);_dashTimer=null;} }
 }
 
@@ -3830,7 +3925,165 @@ if ('serviceWorker' in navigator) {
 // ══════════════════════════════════════════════════════════
 //  INIT
 // ══════════════════════════════════════════════════════════
-document.getElementById('l-date').value = today();
+// ══════════════════════════════════════════════════════════
+// FLIGHT BOARD — Family display page
+// ══════════════════════════════════════════════════════════
+let _boardTimer = null;
+
+function startBoardClock() {
+  if (_boardTimer) clearInterval(_boardTimer);
+  renderFlightBoard();
+  _boardTimer = setInterval(renderFlightBoard, 10000); // refresh every 10s
+}
+
+function renderFlightBoard() {
+  const el = document.getElementById('board-content');
+  if (!el) return;
+
+  const now = new Date();
+  const sorted = [...duties]
+    .filter(d => d.report && d.debrief && d.dtype !== 'off')
+    .sort((a,b) => a.date.localeCompare(b.date) || a.report.localeCompare(b.report));
+
+  if (!sorted.length) {
+    el.innerHTML = boardIdle('No duties logged yet.');
+    return;
+  }
+
+  // Find current duty (in FDP window) or next upcoming duty
+  let currentDuty = null, nextDuty = null;
+  for (const d of sorted) {
+    const repDT = getReportDT(d);
+    const debDT = getDebriefDT(d);
+    if (!repDT || !debDT) continue;
+    if (repDT <= now && now <= debDT) { currentDuty = d; break; }
+    if (repDT > now && !nextDuty) nextDuty = d;
+  }
+
+  if (currentDuty) {
+    el.innerHTML = boardLive(currentDuty, now);
+  } else if (nextDuty) {
+    el.innerHTML = boardNext(nextDuty, now);
+  } else {
+    // All duties completed
+    const last = sorted[sorted.length-1];
+    el.innerHTML = boardIdle(`Last flight completed.<br>No upcoming duties logged.`);
+  }
+}
+
+function boardIdle(msg) {
+  const ist = nowIST();
+  const timeStr = String(ist.getUTCHours()).padStart(2,'0') + ':' +
+                  String(ist.getUTCMinutes()).padStart(2,'0') + ' IST';
+  return `
+    <div style="margin-bottom:32px">
+      <div style="font-size:60px;margin-bottom:8px">✈</div>
+      <div style="font-size:18px;color:var(--muted);font-family:var(--mono)">${timeStr}</div>
+    </div>
+    <div style="font-size:16px;color:var(--muted);font-family:var(--mono);line-height:2">${msg}</div>
+    <div style="margin-top:24px;font-size:12px;color:var(--edge2);font-family:var(--mono)">INDIGO · FDTL MONITOR</div>`;
+}
+
+function boardLive(d, now) {
+  const repDT  = getReportDT(d);
+  const debDT  = getDebriefDT(d);
+  const total  = debDT - repDT;
+  const elapsed = now - repDT;
+  const pct    = Math.min(100, Math.max(2, (elapsed / total) * 100));
+  const route  = d.route || '—';
+  const parts  = route.split('-');
+  const origin = parts[0] || '';
+  const dest   = parts[parts.length-1] || '';
+  const isLayover = dest !== 'BLR' && dest !== 'BOM' && dest !== 'BLR1';
+  const debDTreal = getDebriefDT(d);
+  const msLeft = debDTreal - now;
+  const hLeft  = Math.floor(Math.max(0,msLeft)/3600000);
+  const mLeft  = Math.floor((Math.max(0,msLeft)%3600000)/60000);
+
+  const ist = nowIST();
+  const timeStr = String(ist.getUTCHours()).padStart(2,'0') + ':' +
+                  String(ist.getUTCMinutes()).padStart(2,'0') + ' IST';
+
+  return `
+    <div class="board-status-pill" style="background:rgba(0,230,118,.15);color:var(--green);border:1px solid rgba(0,230,118,.4)">
+      ✈ DUTY LIVE
+    </div>
+
+    <div class="board-route">${route}</div>
+
+    <div class="board-plane-track">
+      <div class="board-plane-bar"></div>
+      <div class="board-plane-dot" style="left:${pct}%">✈</div>
+    </div>
+    <div class="board-apt">
+      <span>${origin}</span>
+      <span>${dest}</span>
+    </div>
+
+    ${isLayover ? `
+    <div class="board-layover">
+      🏨 LAYOVER · ${dest}
+    </div>` : ''}
+
+    <div class="board-time-row">
+      Report: <strong>${d.report}</strong> &nbsp;·&nbsp; Debrief: <strong>${d.debrief}</strong>
+    </div>
+
+    <div class="board-countdown">${hLeft}h ${String(mLeft).padStart(2,'0')}m to debrief</div>
+
+    <div style="margin-top:20px;font-size:13px;color:var(--muted);font-family:var(--mono)">
+      ${fmtDate(d.date)} · ${timeStr}
+    </div>
+    <div style="margin-top:8px;font-size:11px;color:var(--edge2);font-family:var(--mono)">INDIGO · FDTL MONITOR</div>`;
+}
+
+function boardNext(d, now) {
+  const repDT  = getReportDT(d);
+  const msLeft = repDT - now;
+  const hLeft  = Math.floor(Math.max(0,msLeft)/3600000);
+  const mLeft  = Math.floor((Math.max(0,msLeft)%3600000)/60000);
+  const route  = d.route || '—';
+  const parts  = route.split('-');
+  const dest   = parts[parts.length-1] || '';
+  const isLayover = dest !== 'BLR' && dest !== 'BOM' && dest !== 'BLR1';
+
+  const ist = nowIST();
+  const timeStr = String(ist.getUTCHours()).padStart(2,'0') + ':' +
+                  String(ist.getUTCMinutes()).padStart(2,'0') + ' IST';
+
+  return `
+    <div class="board-status-pill" style="background:rgba(0,180,255,.12);color:var(--cyan);border:1px solid rgba(0,180,255,.3)">
+      NEXT DUTY · ${fmtDate(d.date)}
+    </div>
+
+    <div class="board-route">${route}</div>
+
+    <div style="margin-top:16px;width:100%;max-width:500px">
+      <div class="board-plane-bar" style="position:relative;height:2px;background:var(--edge2);border-radius:2px;margin-bottom:8px">
+        <div style="position:absolute;left:0;top:-11px;font-size:24px;opacity:0.4">✈</div>
+      </div>
+    </div>
+
+    ${isLayover ? `
+    <div class="board-layover">
+      🏨 LAYOVER · ${dest}
+    </div>` : ''}
+
+    <div class="board-time-row">
+      Report: <strong style="color:var(--cyan)">${d.report}</strong>
+      &nbsp;·&nbsp; Debrief: <strong>${d.debrief}</strong>
+    </div>
+
+    <div class="board-countdown" style="color:var(--amber)">
+      ⏳ ${hLeft}h ${String(mLeft).padStart(2,'0')}m to report
+    </div>
+
+    <div style="margin-top:20px;font-size:13px;color:var(--muted);font-family:var(--mono)">
+      ${timeStr}
+    </div>
+    <div style="margin-top:8px;font-size:11px;color:var(--edge2);font-family:var(--mono)">INDIGO · FDTL MONITOR</div>`;
+}
+
 const nm=nowIST();
 const curMonthVal=`${nm.getUTCFullYear()}-${String(nm.getUTCMonth()+1).padStart(2,'0')}`;
 document.getElementById('paste-month').value = curMonthVal;
