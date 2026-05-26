@@ -115,7 +115,30 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--m
 .nb.on{color:var(--cyan)}
 .nb.on .ni-dot{background:var(--cyan)}
 
-/* ── Panel cards ── */
+/* ── Flight Board ── */
+.board-pill{display:inline-block;padding:6px 18px;border-radius:20px;font-size:11px;
+  font-family:var(--mono);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:20px}
+.board-route{font-family:var(--mono);font-weight:800;color:var(--text);line-height:1.1;
+  font-size:clamp(28px,7vw,64px);letter-spacing:-1px;margin-bottom:20px;word-break:break-all}
+.board-track-wrap{width:100%;max-width:520px;margin:0 auto 6px}
+.board-track{position:relative;height:48px}
+.board-bar{position:absolute;top:50%;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,var(--cyan),rgba(0,230,118,.3));
+  border-radius:2px;transform:translateY(-50%)}
+.board-plane{position:absolute;top:50%;font-size:26px;transform:translate(-50%,-50%);
+  filter:drop-shadow(0 0 8px rgba(0,200,255,.7));transition:left 2s linear}
+.board-apts{display:flex;justify-content:space-between;font-family:var(--mono);
+  font-size:12px;color:var(--muted);letter-spacing:1px;
+  width:100%;max-width:520px;margin:0 auto 20px}
+.board-info{font-family:var(--mono);font-size:14px;color:var(--muted);
+  line-height:2.2;margin-bottom:6px}
+.board-info strong{color:var(--text);font-size:17px}
+.board-countdown{font-family:var(--mono);font-size:30px;font-weight:700;
+  color:var(--cyan);margin:10px 0}
+.board-layover{margin:14px 0;padding:12px 24px;background:rgba(245,166,35,.12);
+  border:1px solid rgba(245,166,35,.4);border-radius:12px;
+  font-size:15px;color:var(--amber);font-family:var(--mono)}
+.board-footer{margin-top:20px;font-size:11px;color:var(--edge2);font-family:var(--mono)}
 .pcard{
   background:var(--panel);border:1px solid var(--edge);
   border-radius:12px;padding:14px;margin-bottom:12px;
@@ -764,6 +787,15 @@ Debriefing time: 2300"></textarea>
 <!-- ═══════════════════════════════════
      PAGE 5 — GUIDE
 ═══════════════════════════════════ -->
+<!-- ═══════════════════════════════════
+     PAGE 7 — FLIGHT BOARD
+═══════════════════════════════════ -->
+<div id="page-board" class="page" style="padding:0">
+  <div id="board-content" style="min-height:100vh;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;padding:24px 16px;text-align:center">
+  </div>
+</div>
+
 <div id="page-guide" class="page">
 
   <div class="slbl">How to use this app</div>
@@ -843,12 +875,13 @@ Debriefing time: 2300"></textarea>
 
 <!-- NAVBAR -->
 <nav id="nav">
-  <button class="nb on" ontouchend="nbTap(event,'dash',this)" onclick="goPage('dash',this)"><span class="ni">📊</span>Dash</button>
-  <button class="nb" ontouchend="nbTap(event,'roster',this)" onclick="goPage('roster',this)"><span class="ni">📋</span>Roster</button>
-  <button class="nb" ontouchend="nbTap(event,'log',this)" onclick="goPage('log',this)"><span class="ni">✏️</span>Log</button>
-  <button class="nb" ontouchend="nbTap(event,'duties-full',this)" onclick="goPage('duties-full',this)"><span class="ni">🗂</span>Duties</button>
-  <button class="nb" ontouchend="nbTap(event,'cumul',this)" onclick="goPage('cumul',this)"><span class="ni">📈</span>Limits</button>
-  <button class="nb" ontouchend="nbTap(event,'guide',this)" onclick="goPage('guide',this)"><span class="ni">📖</span>Guide</button>
+  <div class="nb on" ontouchstart="" ontouchend="nbTap(event,'dash',this)" onclick="goPage('dash',this)"><span class="ni">📊</span>Dash</div>
+  <div class="nb" ontouchstart="" ontouchend="nbTap(event,'roster',this)" onclick="goPage('roster',this)"><span class="ni">📋</span>Roster</div>
+  <div class="nb" ontouchstart="" ontouchend="nbTap(event,'log',this)" onclick="goPage('log',this)"><span class="ni">✏️</span>Log</div>
+  <div class="nb" ontouchstart="" ontouchend="nbTap(event,'duties-full',this)" onclick="goPage('duties-full',this)"><span class="ni">🗂</span>Duties</div>
+  <div class="nb" ontouchstart="" ontouchend="nbTap(event,'cumul',this)" onclick="goPage('cumul',this)"><span class="ni">📈</span>Limits</div>
+  <div class="nb" ontouchstart="" ontouchend="nbTap(event,'board',this)" onclick="goPage('board',this)"><span class="ni">✈</span>Board</div>
+  <div class="nb" ontouchstart="" ontouchend="nbTap(event,'guide',this)" onclick="goPage('guide',this)"><span class="ni">📖</span>Guide</div>
 </nav>
 </div><!-- app -->
 
@@ -1147,6 +1180,7 @@ function goPage(name, btn) {
   if (name==='dash') { renderDash(); startDashClock(); }
   else if (name==='cumul') { renderCumul(); }
   else if (name==='duties-full') { if (!_dutiesYear) initDutiesMonth(); renderDutiesFull(); }
+  else if (name==='board') { renderFlightBoard(); startBoardClock(); }
   else { if(_dashTimer){clearInterval(_dashTimer);_dashTimer=null;} }
 }
 
@@ -1178,7 +1212,7 @@ function renderDutiesFull() {
   if (!_dutiesYear) initDutiesMonth();
 
   const el = document.getElementById('duties-full-list');
-  const allSorted = [...duties].sort((a,b) => a.date.localeCompare(b.date));
+  const allSorted = [...duties].sort((a,b) => b.date.localeCompare(a.date) || b.report.localeCompare(a.report));
 
   // Build YYYY-MM key for active month
   const activeMonth = `${_dutiesYear}-${String(_dutiesMonth).padStart(2,'0')}`;
@@ -3834,20 +3868,32 @@ function saveStandbyConvert(sbId) {
 //  LIVE CLOCK
 // ══════════════════════════════════════════════════════════
 function tickClock() {
-  const now = new Date();          // real wall-clock time
-  // UTC clock — raw UTC
+  const now = new Date();
   const uh = String(now.getUTCHours()).padStart(2,'0');
   const um = String(now.getUTCMinutes()).padStart(2,'0');
   const us = String(now.getUTCSeconds()).padStart(2,'0');
-  document.getElementById('live-clock').textContent = `${uh}:${um}:${us}Z`;
-  // IST clock — always UTC+5:30, ignores device timezone
+  const el1 = document.getElementById('live-clock');
+  if (el1) el1.textContent = `${uh}:${um}:${us}Z`;
   const istMs = now.getTime() + (5*60+30)*60000;
   const ist   = new Date(istMs);
   const ih    = String(ist.getUTCHours()).padStart(2,'0');
   const im    = String(ist.getUTCMinutes()).padStart(2,'0');
   const is_   = String(ist.getUTCSeconds()).padStart(2,'0');
-  document.getElementById('live-clock-ist').textContent = `${ih}:${im}:${is_} IST`;
+  const el2 = document.getElementById('live-clock-ist');
+  if (el2) el2.textContent = `${ih}:${im}:${is_} IST`;
 }
+
+function startClock() {
+  if (_clockTimer) clearInterval(_clockTimer);
+  tickClock();
+  _clockTimer = setInterval(tickClock, 1000);
+}
+
+// Resume clock when app becomes visible (iOS PWA can pause timers)
+document.addEventListener('visibilitychange', function() {
+  if (!document.hidden) { startClock(); renderDash(); }
+});
+window.addEventListener('pageshow', function() { startClock(); });
 
 // ══════════════════════════════════════════════════════════
 //  SERVICE WORKER
@@ -3861,14 +3907,189 @@ if ('serviceWorker' in navigator) {
 // ══════════════════════════════════════════════════════════
 //  INIT
 // ══════════════════════════════════════════════════════════
-document.getElementById('l-date').value = today();
+// ══════════════════════════════════════════════════════════
+// FLIGHT BOARD
+// ══════════════════════════════════════════════════════════
+let _boardTimer = null;
+
+function startBoardClock() {
+  if (_boardTimer) clearInterval(_boardTimer);
+  renderFlightBoard();
+  _boardTimer = setInterval(renderFlightBoard, 10000);
+}
+
+function addMinsToIST(hhmm, mins) {
+  // Add mins to a HH:MM string, return HH:MM (may cross midnight)
+  const [h,m] = hhmm.split(':').map(Number);
+  const total = h*60 + m + mins;
+  const hh = Math.floor(((total % 1440) + 1440) % 1440 / 60);
+  const mm = ((total % 1440) + 1440) % 1440 % 60;
+  return String(hh).padStart(2,'0') + ':' + String(mm).padStart(2,'0');
+}
+
+function fmtCountdown(ms) {
+  if (ms <= 0) return '00h 00m';
+  const h = Math.floor(ms/3600000);
+  const m = Math.floor((ms%3600000)/60000);
+  return `${String(h).padStart(2,'0')}h ${String(m).padStart(2,'0')}m`;
+}
+
+function renderFlightBoard() {
+  const el = document.getElementById('board-content');
+  if (!el) return;
+
+  const now = new Date();
+  const ist = nowIST();
+  const timeStr = String(ist.getUTCHours()).padStart(2,'0') + ':' +
+                  String(ist.getUTCMinutes()).padStart(2,'0') + ' IST';
+
+  const sorted = [...duties]
+    .filter(d => d.report && d.debrief)
+    .sort((a,b) => a.date.localeCompare(b.date) || a.report.localeCompare(b.report));
+
+  if (!sorted.length) {
+    el.innerHTML = `
+      <div style="font-size:64px;margin-bottom:16px">✈</div>
+      <div style="font-family:var(--mono);font-size:20px;color:var(--muted)">${timeStr}</div>
+      <div style="font-family:var(--mono);font-size:14px;color:var(--edge2);margin-top:12px">No duties logged</div>
+      <div class="board-footer">INDIGO · FDTL MONITOR</div>`;
+    return;
+  }
+
+  let currentDuty = null, nextDuty = null;
+  for (const d of sorted) {
+    const repDT = getReportDT(d);
+    const debDT = getDebriefDT(d);
+    if (!repDT || !debDT) continue;
+    if (repDT <= now && now <= debDT) { currentDuty = d; break; }
+    if (repDT > now && !nextDuty) nextDuty = d;
+  }
+
+  if (currentDuty) {
+    el.innerHTML = buildBoardLive(currentDuty, now, timeStr);
+  } else if (nextDuty) {
+    el.innerHTML = buildBoardNext(nextDuty, now, timeStr);
+  } else {
+    el.innerHTML = `
+      <div style="font-size:56px;margin-bottom:16px">🏠</div>
+      <div style="font-family:var(--mono);font-size:22px;color:var(--green);margin-bottom:8px">At Home</div>
+      <div style="font-family:var(--mono);font-size:16px;color:var(--muted)">${timeStr}</div>
+      <div style="font-family:var(--mono);font-size:13px;color:var(--muted);margin-top:8px">No upcoming duties</div>
+      <div class="board-footer">INDIGO · FDTL MONITOR</div>`;
+  }
+}
+
+function buildBoardLive(d, now, timeStr) {
+  const repDT  = getReportDT(d);
+  const debDT  = getDebriefDT(d);
+  const total  = debDT - repDT;
+  const elapsed = now - repDT;
+  const pct    = Math.min(96, Math.max(4, (elapsed / total) * 100)).toFixed(1);
+
+  const route  = d.route || '—';
+  const parts  = route.split('-');
+  const origin = parts[0] || '';
+  const dest   = parts[parts.length-1] || '';
+  const isLayover = dest !== 'BLR' && dest !== '';
+
+  const msToDebrief = debDT - now;
+  const homeTime    = addMinsToIST(d.debrief, 60);  // home = debrief + 1h
+  const cabTime     = addMinsToIST(d.report, -60);   // cab  = report - 1h
+
+  return `
+    <div class="board-pill" style="background:rgba(0,230,118,.15);color:var(--green);border:1px solid rgba(0,230,118,.4)">
+      ✈ DUTY LIVE · ${fmtDate(d.date)}
+    </div>
+
+    <div class="board-route">${route}</div>
+
+    <div class="board-track-wrap">
+      <div class="board-track">
+        <div class="board-bar"></div>
+        <div class="board-plane" style="left:${pct}%">✈</div>
+      </div>
+    </div>
+    <div class="board-apts">
+      <span>${origin}</span>
+      <span>${dest}</span>
+    </div>
+
+    ${isLayover ? `<div class="board-layover">🏨 LAYOVER · ${dest}</div>` : ''}
+
+    <div class="board-info">
+      Report: <strong>${d.report}</strong> &nbsp;·&nbsp; Debrief: <strong>${d.debrief}</strong>
+    </div>
+    <div class="board-info" style="font-size:12px">
+      🚗 Cab at: <strong>${cabTime}</strong> &nbsp;·&nbsp; 🏠 Home by: <strong>${homeTime}</strong>
+    </div>
+
+    <div class="board-countdown">${fmtCountdown(msToDebrief)} to debrief</div>
+
+    <div style="font-family:var(--mono);font-size:13px;color:var(--muted)">${timeStr}</div>
+    <div class="board-footer">INDIGO · FDTL MONITOR</div>`;
+}
+
+function buildBoardNext(d, now, timeStr) {
+  const repDT   = getReportDT(d);
+  const msLeft  = repDT - now;
+  const route   = d.route || '—';
+  const parts   = route.split('-');
+  const origin  = parts[0] || '';
+  const dest    = parts[parts.length-1] || '';
+  const isLayover = dest !== 'BLR' && dest !== '';
+  const cabTime  = addMinsToIST(d.report, -60);
+  const homeTime = addMinsToIST(d.debrief, 60);
+
+  // How long until cab? (cab = report - 60min)
+  const cabDT   = new Date(repDT.getTime() - 60*60000);
+  const msToCab = cabDT - now;
+
+  return `
+    <div class="board-pill" style="background:rgba(0,180,255,.12);color:var(--cyan);border:1px solid rgba(0,180,255,.3)">
+      NEXT DUTY · ${fmtDate(d.date)}
+    </div>
+
+    <div class="board-route">${route}</div>
+
+    <div class="board-track-wrap">
+      <div class="board-track">
+        <div class="board-bar" style="background:var(--edge2)"></div>
+        <div class="board-plane" style="left:4%;opacity:0.4">✈</div>
+      </div>
+    </div>
+    <div class="board-apts">
+      <span>${origin}</span>
+      <span>${dest}</span>
+    </div>
+
+    ${isLayover ? `<div class="board-layover">🏨 LAYOVER · ${dest}</div>` : ''}
+
+    <div class="board-info">
+      Report: <strong style="color:var(--cyan)">${d.report}</strong>
+      &nbsp;·&nbsp; Debrief: <strong>${d.debrief}</strong>
+    </div>
+    <div class="board-info" style="font-size:12px">
+      🚗 Cab at: <strong style="color:var(--amber)">${cabTime}</strong>
+      &nbsp;·&nbsp; 🏠 Home by: <strong>${homeTime}</strong>
+    </div>
+
+    <div class="board-countdown" style="color:var(--amber)">
+      ${msToCab > 0
+        ? `🚗 ${fmtCountdown(msToCab)} to cab`
+        : `⏳ ${fmtCountdown(msLeft)} to report`}
+    </div>
+
+    <div style="font-family:var(--mono);font-size:13px;color:var(--muted)">${timeStr}</div>
+    <div class="board-footer">INDIGO · FDTL MONITOR</div>`;
+}
+
+
 const nm=nowIST();
 const curMonthVal=`${nm.getUTCFullYear()}-${String(nm.getUTCMonth()+1).padStart(2,'0')}`;
 document.getElementById('paste-month').value = curMonthVal;
 document.getElementById('ai-month').value    = curMonthVal;
 initDutiesMonth();
-tickClock();
-_clockTimer = setInterval(tickClock, 1000);
+startClock();
 renderDash();
 startDashClock();
 </script>
