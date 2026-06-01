@@ -619,7 +619,7 @@ Debriefing time: 2300"></textarea>
       </div>
       <div class="fg" id="field-route">
         <label class="fl">Route</label>
-        <input type="text" id="l-route" placeholder="BLR-DEL-BLR" oninput="this.value=this.value.toUpperCase();autoLandingsFromRoute()" style="text-transform:uppercase;letter-spacing:1px">
+        <input type="text" id="l-route" placeholder="BLR-DEL-BLR" oninput="this.value=this.value.toUpperCase().replace(/\s+/g,'-');autoLandingsFromRoute()" style="text-transform:uppercase;letter-spacing:1px">
       </div>
     </div>
 
@@ -1212,7 +1212,7 @@ function renderDutiesFull() {
   if (!_dutiesYear) initDutiesMonth();
 
   const el = document.getElementById('duties-full-list');
-  const allSorted = [...duties].sort((a,b) => b.date.localeCompare(a.date) || b.report.localeCompare(a.report));
+  const allSorted = [...duties].sort((a,b) => a.date.localeCompare(b.date) || a.report.localeCompare(b.report));
 
   // Build YYYY-MM key for active month
   const activeMonth = `${_dutiesYear}-${String(_dutiesMonth).padStart(2,'0')}`;
@@ -1227,7 +1227,7 @@ function renderDutiesFull() {
   if (labelEl) labelEl.textContent = _MONTHS[_dutiesMonth-1];
 
   // Show duty count for this month
-  const monthDuties = allSorted.filter(d => d.date.slice(0,7) === activeMonth);
+  const monthDuties = allSorted.filter(d => d.date.slice(0,7) === activeMonth).reverse();
   if (rangeEl) rangeEl.textContent = monthDuties.length
     ? `${monthDuties.length} ${monthDuties.length===1?'duty':'duties'}`
     : 'No duties this month';
@@ -1255,7 +1255,8 @@ function buildDutiesHTML(list, allSorted) {
   let html = '';
   for (let i=0; i<list.length; i++) {
     const d    = list[i];
-    const dIdx = allSorted.indexOf(d);
+    // Find by id to avoid reference equality issues with reversed/filtered arrays
+    const dIdx = allSorted.findIndex(x => x.id === d.id);
     const prev = dIdx > 0 ? allSorted[dIdx-1] : null;
 
     // ── Rest calculation — §2.10.1 + §2.10.5
@@ -1297,7 +1298,8 @@ function buildDutiesHTML(list, allSorted) {
       earliestLegalDT = new Date(restStartDT.getTime() + (minR*60 + penaltyMins + 45) * 60000);
     }
 
-    // Rest row shown ABOVE the duty card
+    // Buffer rest card — rendered AFTER duty card so it appears below it in reversed list
+    let restCardHTML = '';
     if (restH !== null) {
       const rAbs   = Math.max(0, restH);
       const restHH = Math.floor(rAbs);
@@ -1321,7 +1323,7 @@ function buildDutiesHTML(list, allSorted) {
           ? '+45min travel → Rest starts (airport standby ends)'
           : '+45min travel → Rest starts (after debrief)';
 
-      html += `<div style="
+      restCardHTML = `<div style="
         display:flex;align-items:flex-start;gap:10px;
         margin:0 4px;padding:9px 12px;
         background:${ok?'var(--green-dim)':'var(--red-dim)'};
@@ -1481,6 +1483,9 @@ function buildDutiesHTML(list, allSorted) {
         </button>
       </div>
     </div>`;
+
+    // Rest card appears BELOW the duty card (between this duty and the earlier duty below it)
+    html += restCardHTML;
   }
   return html;
 }
@@ -3121,12 +3126,13 @@ function fmtBlockInput(el) {
   el.value = v;
 }
 
-// Auto-detect landings from route: BLR-DEL-BLR = 2 dashes = 2 landings
+// Auto-detect landings from route: BLR-DEL-BLR or BLR DEL BLR = 2 separators = 2 landings
 function autoLandingsFromRoute() {
   const route = document.getElementById('l-route').value.trim();
   if (!route) return;
-  // Count hyphens — each hyphen is a sector boundary = one landing
-  const dashes = (route.match(/-/g) || []).length;
+  // Normalise: replace spaces with hyphens, then count hyphens
+  const normalised = route.replace(/\s+/g, '-');
+  const dashes = (normalised.match(/-/g) || []).length;
   if (dashes >= 1 && dashes <= 6) {
     document.getElementById('l-land').value = dashes;
   }
@@ -3196,7 +3202,7 @@ function logNightDetect() {
 
 function logFlight() {
   const date   = document.getElementById('l-date').value;
-  const route  = document.getElementById('l-route').value.trim();
+  const route  = document.getElementById('l-route').value.trim().replace(/\s+/g, '-');
   const report = document.getElementById('l-report').value;
   const debrief= document.getElementById('l-debrief').value;
   // Block hours from time input (HH:MM)
