@@ -4062,8 +4062,10 @@ window.addEventListener('pageshow', function() { startClock(); });
 //  SERVICE WORKER
 // ══════════════════════════════════════════════════════════
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      .then(reg => reg.update())
+      .catch(() => navigator.serviceWorker.register('sw.js').catch(()=>{}));
   });
 }
 
