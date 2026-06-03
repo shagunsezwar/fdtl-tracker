@@ -1313,8 +1313,13 @@ function buildDutiesHTML(list, allSorted) {
   for (let i=0; i<list.length; i++) {
     const d    = list[i];
     // Find by id to avoid reference equality issues with reversed/filtered arrays
+    // Skip leave duties when finding prev — leaves are rest, not duties
     const dIdx = allSorted.findIndex(x => x.id === d.id);
-    const prev = dIdx > 0 ? allSorted[dIdx-1] : null;
+    // Walk backwards in allSorted to find the last non-leave duty before d
+    let prev = null;
+    for (let pi = dIdx - 1; pi >= 0; pi--) {
+      if (allSorted[pi].dtype !== 'leave') { prev = allSorted[pi]; break; }
+    }
 
     // ── Rest calculation — §2.10.1 + §2.10.5
     //
@@ -1433,7 +1438,7 @@ function buildDutiesHTML(list, allSorted) {
         <button onclick="delDutyFull(${d.id})" style="background:none;border:none;
           color:var(--muted);font-size:18px;cursor:pointer;padding:4px">🗑</button>
       </div>`;
-      html += restCardHTML;
+      // No rest card after/before leave — leave IS rest
       continue;
     }
     // Violation = rest that follows this duty starts after the 168h deadline
@@ -1811,7 +1816,7 @@ function buildLandingRow() {
 // Get the active report time string — from current/next duty, or null
 function getActiveDutyReportStr() {
   const now = new Date();  // real epoch
-  const sorted = [...duties].filter(d=>d.report&&d.debrief).sort((a,b)=>a.date.localeCompare(b.date));
+  const sorted = [...duties].filter(d=>d.report&&d.debrief&&d.dtype!=='leave').sort((a,b)=>a.date.localeCompare(b.date));
   for (const d of sorted) {
     const repDT = getReportDT(d);
     const debDT = d.debrief ? getDebriefDT(d) : repDT;
@@ -1990,7 +1995,7 @@ function renderNextReport() {
   const el = document.getElementById('nr-box-el');
   // Always restore FDP limits visibility — standby path may have hidden it
   document.getElementById('fdp-limits-card').style.display = '';
-  const sorted = [...duties].filter(d=>d.report&&d.debrief).sort((a,b)=>a.date.localeCompare(b.date));
+  const sorted = [...duties].filter(d=>d.report&&d.debrief&&d.dtype!=='leave').sort((a,b)=>a.date.localeCompare(b.date));
   if (!sorted.length) {
     el.innerHTML = `<div class="nr-box" style="border-color:rgba(90,112,128,.3)">
       <div class="nr-label">📋 No duties logged</div>
@@ -2826,15 +2831,22 @@ function logLeave() {
 
   const resEl = document.getElementById('leave-result');
   if (resEl) {
-    resEl.innerHTML = `<div style="margin-top:10px;padding:12px 14px;
-      background:var(--green-dim);border:1px solid rgba(0,230,118,.35);
-      border-radius:10px;display:flex;align-items:center;gap:10px">
+    resEl.innerHTML = `<div style="
+      background:var(--green-dim);
+      border:1px solid rgba(0,230,118,.35);
+      border-radius:10px;padding:12px 14px;margin-top:12px;
+      display:flex;align-items:center;gap:10px;
+      animation:fadeUp .2s ease">
       <span style="font-size:20px">✅</span>
       <div>
-        <div style="font-weight:700;font-size:13px">${lv.name} logged</div>
-        <div style="font-size:11px;color:var(--muted)">${fmtDate(date)} · Earliest report: ${lv.earliestHHMM} on ${fmtDate(nextDate)}</div>
-      </div></div>`;
-    setTimeout(() => { if(resEl) resEl.innerHTML=''; }, 4000);
+        <div style="font-family:var(--sans);font-weight:700;font-size:13px">Leave logged</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">
+          ${lv.name} · ${fmtDate(date)}<br>
+          Earliest report: <strong style="color:var(--cyan)">${lv.earliestHHMM}</strong> on ${fmtDate(nextDate)}
+        </div>
+      </div>
+    </div>`;
+    setTimeout(() => { if(resEl) resEl.innerHTML=''; }, 5000);
   }
   document.getElementById('leave-date').value = '';
 }
@@ -4318,7 +4330,7 @@ function renderFlightBoard() {
                   String(ist.getUTCMinutes()).padStart(2,'0') + ' IST';
 
   const sorted = [...duties]
-    .filter(d => d.report && d.debrief)
+    .filter(d => d.report && d.debrief && d.dtype !== 'leave')
     .sort((a,b) => a.date.localeCompare(b.date) || a.report.localeCompare(b.report));
 
   if (!sorted.length) {
