@@ -598,6 +598,14 @@ Debriefing time: 2300"></textarea>
 ═══════════════════════════════════ -->
 <div id="page-log" class="page">
 
+  <!-- Tab toggle -->
+  <div style="display:flex;gap:8px;margin-bottom:14px">
+    <button id="log-tab-duty" class="btn btn-cyan" style="flex:1;font-size:11px" onclick="logTab('duty')">✈ Duty</button>
+    <button id="log-tab-leave" class="btn btn-ghost" style="flex:1;font-size:11px" onclick="logTab('leave')">🌴 Leave</button>
+  </div>
+
+  <!-- DUTY SECTION -->
+  <div id="log-duty-section">
   <div class="pcard">
     <div class="pchead">Log a duty</div>
 
@@ -682,6 +690,40 @@ Debriefing time: 2300"></textarea>
   </div>
 
   <div id="log-result"></div>
+
+  </div><!-- end log-duty-section -->
+
+  <!-- LEAVE SECTION -->
+  <div id="log-leave-section" style="display:none">
+    <div class="pcard">
+      <div class="pchead">Log a Leave</div>
+
+      <div class="fg" style="margin-bottom:12px">
+        <label class="fl">Leave type</label>
+        <select id="leave-type" onchange="updateLeaveInfo()">
+          <option value="OFG">Golden Day Off (OFG)</option>
+          <option value="SL">Sick Leave (SL)</option>
+          <option value="CL">Casual Leave (CL)</option>
+          <option value="PCL">Planned Casual Leave (PCL)</option>
+          <option value="PL">Privileged Leave (PL)</option>
+          <option value="OFB">Blue Point Off (OFB)</option>
+        </select>
+      </div>
+
+      <div class="fg" style="margin-bottom:12px">
+        <label class="fl">Date</label>
+        <input type="date" id="leave-date">
+      </div>
+
+      <div id="leave-info-box" style="padding:10px 12px;background:var(--panel2);
+        border:1px solid var(--edge2);border-radius:8px;margin-bottom:14px;
+        font-size:11px;color:var(--muted);line-height:1.8">
+      </div>
+
+      <button class="btn btn-cyan" onclick="logLeave()" style="width:100%">+ Log Leave</button>
+    </div>
+    <div id="leave-result"></div>
+  </div><!-- end log-leave-section -->
 
 </div><!-- end log -->
 
@@ -866,6 +908,20 @@ Debriefing time: 2300"></textarea>
     <div class="rule-item"><span class="rule-ref">§2.10.6</span><strong>Weekly rest:</strong> Min 48 continuous hours including 2 local nights, within every 168-hour period</div>
     <div class="rule-item"><span class="rule-ref">§2.13.1</span><strong>Consecutive night ops:</strong> Max 2 consecutive night duties (0000–0600) in any 168-hour period</div>
     <div class="rule-item"><span class="rule-ref">§2.16.1</span><strong>Unforeseen extensions:</strong> FT +1.5h max, FDP +3h max. Cumulative limit: 4h FT and 8h FDP in any 28 days</div>
+  </div>
+
+  <!-- LEAVE RULES & EDITABLE CONFIG -->
+  <div class="guide-step" style="margin-top:16px">
+    <div class="gs-num">🌴</div>
+    <div style="flex:1">
+      <div class="gs-title">Leave Types & Earliest Report Times</div>
+      <div class="gs-body" style="margin-bottom:12px">
+        All leaves run from <strong>00:00 to 23:59</strong> on the leave day. The table below shows when you can earliest report for duty the <strong>next day</strong>. You can edit these times here if rules change.
+      </div>
+      <div id="leave-config-table"></div>
+      <button class="btn btn-cyan" style="width:100%;margin-top:12px" onclick="saveLeaveConfigFromGuide()">💾 Save changes</button>
+      <button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="resetLeaveConfig()">↺ Reset to defaults</button>
+    </div>
   </div>
 
   <div style="height:10px"></div>
@@ -1181,6 +1237,7 @@ function goPage(name, btn) {
   else if (name==='cumul') { renderCumul(); }
   else if (name==='duties-full') { if (!_dutiesYear) initDutiesMonth(); renderDutiesFull(); }
   else if (name==='board') { renderFlightBoard(); startBoardClock(); }
+  else if (name==='guide') { renderLeaveConfigTable(); }
   else { if(_dashTimer){clearInterval(_dashTimer);_dashTimer=null;} }
 }
 
@@ -1356,7 +1413,29 @@ function buildDutiesHTML(list, allSorted) {
 
     const cls = d.status||'ok';
 
-    // Check if this duty violates the 168h weekly rest rule
+    // ── Leave card ──
+    if (d.dtype === 'leave') {
+      const cfg = getLeaveConfig();
+      const lv  = cfg[d.leaveCode] || {};
+      const col = lv.color || 'var(--cyan)';
+      html += `<div style="padding:12px 14px;background:var(--panel2);
+        border-radius:10px;border-left:4px solid ${col};
+        margin-bottom:6px;display:flex;align-items:center;gap:12px">
+        <div style="font-size:24px">🌴</div>
+        <div style="flex:1">
+          <div style="font-size:12px;font-weight:700;color:var(--text)">${fmtDate(d.date)}</div>
+          <div style="font-size:13px;font-weight:700;color:${col}">${d.leaveName||d.leaveCode} (${d.leaveCode})</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px">
+            Full day 00:00–23:59 · Earliest next report:
+            <strong style="color:var(--cyan)">${d.leaveEarliestReport||'—'} on ${fmtDate(d.leaveNextDate||'')}</strong>
+          </div>
+        </div>
+        <button onclick="delDutyFull(${d.id})" style="background:none;border:none;
+          color:var(--muted);font-size:18px;cursor:pointer;padding:4px">🗑</button>
+      </div>`;
+      html += restCardHTML;
+      continue;
+    }
     // Violation = rest that follows this duty starts after the 168h deadline
     const weeklyRests168 = findWeeklyRests();
     const pastRests168   = weeklyRests168.filter(r => r.qualifies);
@@ -2667,6 +2746,136 @@ function stripTerminal(code) {
 }
 
 // ── Roster tab toggle ──
+// ══════════════════════════════════════════════════════════
+// LEAVE DEFINITIONS — earliest report times (editable in Guide)
+// ══════════════════════════════════════════════════════════
+const LEAVE_DEFAULTS = {
+  OFG: { name:'Golden Day Off',        code:'OFG', earliestHHMM:'00:01', color:'#4a9eff' },
+  SL:  { name:'Sick Leave',            code:'SL',  earliestHHMM:'06:00', color:'#ff6b6b' },
+  CL:  { name:'Casual Leave',          code:'CL',  earliestHHMM:'00:05', color:'#ffd93d' },
+  PCL: { name:'Planned Casual Leave',  code:'PCL', earliestHHMM:'10:00', color:'#6bcb77' },
+  PL:  { name:'Privileged Leave',      code:'PL',  earliestHHMM:'10:00', color:'#9b59b6' },
+  OFB: { name:'Blue Point Off',        code:'OFB', earliestHHMM:'00:01', color:'#1abc9c' },
+};
+
+function getLeaveConfig() {
+  try {
+    const stored = localStorage.getItem('leave_config');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      const merged = { ...LEAVE_DEFAULTS };
+      for (const k in parsed) { if (merged[k]) merged[k] = { ...merged[k], ...parsed[k] }; }
+      return merged;
+    }
+  } catch(e) {}
+  return { ...LEAVE_DEFAULTS };
+}
+
+function saveLeaveConfig(cfg) {
+  localStorage.setItem('leave_config', JSON.stringify(cfg));
+}
+
+// ── Log tab toggle ──
+function logTab(tab) {
+  document.getElementById('log-duty-section').style.display  = tab==='duty'  ? '' : 'none';
+  document.getElementById('log-leave-section').style.display = tab==='leave' ? '' : 'none';
+  document.getElementById('log-tab-duty').className  = 'btn ' + (tab==='duty'  ? 'btn-cyan' : 'btn-ghost');
+  document.getElementById('log-tab-leave').className = 'btn ' + (tab==='leave' ? 'btn-cyan' : 'btn-ghost');
+  if (tab==='leave') updateLeaveInfo();
+}
+
+function updateLeaveInfo() {
+  const cfg  = getLeaveConfig();
+  const code = document.getElementById('leave-type') && document.getElementById('leave-type').value;
+  if (!code) return;
+  const lv = cfg[code];
+  if (!lv) return;
+  const el = document.getElementById('leave-info-box');
+  if (el) el.innerHTML = `
+    <div style="color:var(--text);font-weight:600;margin-bottom:4px">${lv.name} (${lv.code})</div>
+    <div>Leave period: <strong>00:00 – 23:59</strong> (full day)</div>
+    <div>Earliest report next day: <strong style="color:var(--cyan)">${lv.earliestHHMM}</strong></div>`;
+}
+
+function logLeave() {
+  const cfg  = getLeaveConfig();
+  const code = document.getElementById('leave-type').value;
+  const date = document.getElementById('leave-date').value;
+  const lv   = cfg[code];
+  if (!date) { alert('Please select a date.'); return; }
+  if (!lv)   { alert('Unknown leave type.'); return; }
+
+  if (duties.find(d => d.date === date && d.leaveCode === code)) {
+    alert(`${lv.name} already logged for ${fmtDate(date)}.`); return;
+  }
+
+  const nextDate = new Date(new Date(date+'T00:00:00Z').getTime()+86400000).toISOString().slice(0,10);
+
+  const d = {
+    id: Date.now() + Math.random(),
+    date, dtype:'leave', leaveCode:code, leaveName:lv.name,
+    leaveColor:lv.color, leaveEarliestReport:lv.earliestHHMM, leaveNextDate:nextDate,
+    report:'00:00', debrief:'23:59', debriefDate:date,
+    fdp:0, block:0, landings:0, night:'no', crew:'2p',
+    route:lv.name, status:'ok', issues:[], warns:[], rosterType:'manual'
+  };
+
+  duties.push(d);
+  duties.sort((a,b) => a.date.localeCompare(b.date));
+  persist(duties); renderDutiesFull(); renderDash();
+
+  const resEl = document.getElementById('leave-result');
+  if (resEl) {
+    resEl.innerHTML = `<div style="margin-top:10px;padding:12px 14px;
+      background:var(--green-dim);border:1px solid rgba(0,230,118,.35);
+      border-radius:10px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:20px">✅</span>
+      <div>
+        <div style="font-weight:700;font-size:13px">${lv.name} logged</div>
+        <div style="font-size:11px;color:var(--muted)">${fmtDate(date)} · Earliest report: ${lv.earliestHHMM} on ${fmtDate(nextDate)}</div>
+      </div></div>`;
+    setTimeout(() => { if(resEl) resEl.innerHTML=''; }, 4000);
+  }
+  document.getElementById('leave-date').value = '';
+}
+
+function renderLeaveConfigTable() {
+  const cfg = getLeaveConfig();
+  const el = document.getElementById('leave-config-table');
+  if (!el) return;
+  el.innerHTML = Object.values(cfg).map(lv => `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;
+      background:var(--panel2);border-radius:8px;margin-bottom:6px;
+      border-left:3px solid ${lv.color}">
+      <div style="flex:1">
+        <div style="font-size:11px;font-weight:700;color:var(--text)">${lv.name} (${lv.code})</div>
+        <div style="font-size:10px;color:var(--muted)">Earliest report next day:</div>
+      </div>
+      <input type="time" id="leave-time-${lv.code}" value="${lv.earliestHHMM}"
+        style="width:90px;background:var(--panel3);border:1px solid var(--edge2);
+               border-radius:6px;color:var(--text);font-family:var(--mono);
+               font-size:13px;padding:5px 8px;text-align:center">
+    </div>`).join('');
+}
+
+function saveLeaveConfigFromGuide() {
+  const cfg = getLeaveConfig();
+  for (const code in cfg) {
+    const el = document.getElementById(`leave-time-${code}`);
+    if (el && el.value) cfg[code].earliestHHMM = el.value;
+  }
+  saveLeaveConfig(cfg);
+  alert('✓ Leave times saved!');
+}
+
+function resetLeaveConfig() {
+  if (!confirm('Reset all leave times to defaults?')) return;
+  localStorage.removeItem('leave_config');
+  renderLeaveConfigTable();
+  alert('✓ Reset to defaults.');
+}
+
+
 function rosterTab(tab) {
   document.getElementById('roster-ai-section').style.display   = tab==='ai'   ? '' : 'none';
   document.getElementById('roster-text-section').style.display = tab==='text' ? '' : 'none';
@@ -4253,6 +4462,12 @@ const nm=nowIST();
 const curMonthVal=`${nm.getUTCFullYear()}-${String(nm.getUTCMonth()+1).padStart(2,'0')}`;
 document.getElementById('paste-month').value = curMonthVal;
 document.getElementById('ai-month').value    = curMonthVal;
+const todayStr = `${nm.getUTCFullYear()}-${String(nm.getUTCMonth()+1).padStart(2,'0')}-${String(nm.getUTCDate()).padStart(2,'0')}`;
+const lDateEl = document.getElementById('l-date');
+if (lDateEl) lDateEl.value = todayStr;
+const lvDateEl = document.getElementById('leave-date');
+if (lvDateEl) lvDateEl.value = todayStr;
+updateLeaveInfo();
 initDutiesMonth();
 startClock();
 renderDash();
