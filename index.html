@@ -1332,32 +1332,55 @@ function buildDutiesHTML(list, allSorted) {
     //   The +30min penalty only affects earliest legal, NOT the actual rest display.
     //
     let restH = null, restOk = true, minR = 12, penalty = false, earliestLegalDT = null;
+    let prevLeave = null;
+
+    // Find the immediately preceding leave (if any) in allSorted
+    for (let pi = dIdx - 1; pi >= 0; pi--) {
+      if (allSorted[pi].dtype === 'leave') { prevLeave = allSorted[pi]; }
+      break; // only check the immediately preceding entry
+    }
+
     if (prev && prev.debrief && d.report) {
-      // §2.10.5 penalty: +30min if travel > 30min (stored on duty, default true)
-      penalty = prev.travelPenalty !== false; // default true unless explicitly disabled
+      // ── Standard rest calculation ──
+      penalty = prev.travelPenalty !== false;
       const pDebDT = getDebriefDT(prev);
       const cRepDT = getReportDT(d);
-
-      // ── Actual rest = time between rest start and rest end ──
-      // Rest STARTS:
-      // - Home/Hotel standby ends → immediately (already home, no debrief, no travel)
-      // - Airport standby ends    → +45min travel home (no debrief)
-      // - Flight duty ends        → already accounted via getDebriefDT (+30min debrief) + 45min travel
-      const prevIsHomeSB    = prev.dtype === 'standby-home';
-      const prevIsAptSB     = prev.dtype === 'standby-apt';
-      const travelHomeMins  = prevIsHomeSB ? 0 : 45; // airport SB or flight: 45min travel
-      // For flight duties, getDebriefDT already returns debrief time (eng-off + 30min)
-      // For standby, getDebriefDT returns end of standby period (no debrief added)
+      const prevIsHomeSB = prev.dtype === 'standby-home';
+      const travelHomeMins = prevIsHomeSB ? 0 : 45;
       const restStartDT = new Date(pDebDT.getTime() + travelHomeMins * 60000);
       const restEndDT   = new Date(cRepDT.getTime() - 45 * 60000);
       restH = +((restEndDT - restStartDT) / 3600000).toFixed(2);
-
       const penaltyMins = penalty ? 30 : 0;
       minR  = 12;
       restOk = restH >= (minR + penaltyMins / 60);
+      // Standard earliest legal report from last duty
+      const stdEarliestDT = new Date(restStartDT.getTime() + (minR*60 + penaltyMins + 45) * 60000);
+      earliestLegalDT = stdEarliestDT;
+    }
 
-      // Earliest legal report = restStart + 12h + 30min penalty + 45min travel to airport
-      earliestLegalDT = new Date(restStartDT.getTime() + (minR*60 + penaltyMins + 45) * 60000);
+    // ── Leave constraint ──
+    // If there's a leave between prev duty and this duty,
+    // earliest report must also satisfy leave's leaveEarliestReport on leaveNextDate
+    if (prevLeave && prevLeave.leaveEarliestReport && prevLeave.leaveNextDate) {
+      const [lh,lm] = prevLeave.leaveEarliestReport.split(':').map(Number);
+      const lvDateParts = prevLeave.leaveNextDate.split('-').map(Number);
+      const leaveEarliestDT = new Date(Date.UTC(lvDateParts[0], lvDateParts[1]-1, lvDateParts[2],
+        lh, lm, 0));
+      // Take the LATER of standard rest constraint and leave constraint
+      if (!earliestLegalDT || leaveEarliestDT > earliestLegalDT) {
+        earliestLegalDT = leaveEarliestDT;
+      }
+      // Re-check restOk with the combined constraint
+      if (d.report) {
+        const cRepDT2 = getReportDT(d);
+        if (cRepDT2 < earliestLegalDT) restOk = false;
+      }
+    }
+
+    // If prev leave and no compliant time yet — show leave constraint as rest card
+    if (prevLeave && !prev) {
+      const cRepDT = getReportDT(d);
+      if (earliestLegalDT && cRepDT) restOk = cRepDT >= earliestLegalDT;
     }
 
     // Buffer rest card — rendered AFTER duty card so it appears below it in reversed list
