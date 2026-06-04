@@ -722,8 +722,9 @@ Debriefing time: 2300"></textarea>
 
       <button class="btn btn-cyan" onclick="logLeave()" style="width:100%">+ Log Leave</button>
     </div>
-    <div id="leave-result"></div>
   </div><!-- end log-leave-section -->
+
+  <div id="leave-result"></div>
 
 </div><!-- end log -->
 
@@ -2409,23 +2410,25 @@ function countLocalNights(restStartEpoch, restEndEpoch) {
 // Weekly rest = actual rest window (after travel margins) ≥ 48h with ≥ 2 local nights
 function findWeeklyRests() {
   if (duties.length < 2) return [];
+  const cfg = getLeaveConfig();
 
-  const sorted = [...duties]
-    .filter(d => d.report && (d.debrief || d.dtype.startsWith('standby')))
+  // Use ALL duties sorted — including leaves — to find gaps between actual duties
+  const allSortedAll = [...duties]
+    .filter(d => d.report)
     .sort((a,b) => a.date.localeCompare(b.date) || a.report.localeCompare(b.report));
 
+  // Get only non-leave duties for pairing
+  const nonLeave = allSortedAll.filter(d => d.dtype !== 'leave');
+
   const rests = [];
-  for (let i = 0; i < sorted.length - 1; i++) {
-    const prev = sorted[i];
-    const next = sorted[i+1];
+  for (let i = 0; i < nonLeave.length - 1; i++) {
+    const prev = nonLeave[i];
+    const next = nonLeave[i+1];
     const prevDebDT = getDebriefDT(prev);
     const nextRepDT = getReportDT(next);
     if (!prevDebDT || !nextRepDT) continue;
 
-    // Apply travel margins — same logic as rest calculations elsewhere:
-    // Rest STARTS: home standby end → immediately; airport SB or flight → +45min travel home
-    // Rest ENDS:   next report − 45min travel to airport
-    const prevIsHomeSB  = prev.dtype === 'standby-home';
+    const prevIsHomeSB   = prev.dtype === 'standby-home';
     const travelHomeMins = prevIsHomeSB ? 0 : 45;
     const restStart = new Date(prevDebDT.getTime() + travelHomeMins * 60000);
     const restEnd   = new Date(nextRepDT.getTime()  - 45 * 60000);
@@ -2437,19 +2440,30 @@ function findWeeklyRests() {
     if (gapMins < 48*60) continue;
 
     const localNights = countLocalNights(restStart.getTime(), restEnd.getTime());
+
+    // Check if any qualifying leave falls within this gap
+    const leavesInGap = allSortedAll.filter(d => {
+      if (d.dtype !== 'leave') return false;
+      const leaveCfg = cfg[d.leaveCode];
+      if (!leaveCfg || !leaveCfg.countsAsWeeklyRest) return false;
+      const leaveDate = new Date(d.date + 'T00:00:00Z');
+      return leaveDate >= new Date(prevDebDT.getTime()) && leaveDate <= nextRepDT;
+    });
+
+    // Qualifies if ≥48h + 2 local nights, OR has a qualifying leave in the gap
+    const qualifies = (gapMins >= 48*60 && localNights >= 2) || leavesInGap.length > 0;
+
     rests.push({
-      start:       restStart,
-      end:         restEnd,
-      gapH:        gapMins/60,   // keep as decimal for comparisons
-      gapStr,                    // exact HH:MM for display
-      localNights,
-      qualifies:   gapMins >= 48*60 && localNights >= 2,
-      prevDuty:    prev,
-      nextDuty:    next
+      start: restStart, end: restEnd,
+      gapH: gapMins/60, gapStr, localNights,
+      qualifies,
+      leavesInGap: leavesInGap.map(l => l.leaveName||l.leaveCode),
+      prevDuty: prev, nextDuty: next
     });
   }
   return rests;
 }
+
 
 function renderWeeklyRest() {
   const el = document.getElementById('weekly-rest-content');
@@ -2517,6 +2531,7 @@ function renderWeeklyRest() {
         Ended: <strong>${fmtAsIST(lastRest.end)}</strong><br>
         Duration: <strong style="color:var(--green)">${lastRest.gapStr}</strong>
         · <strong style="color:var(--green)">${lastRest.localNights} local night${lastRest.localNights!==1?'s':''} 🌙</strong>
+        ${lastRest.leavesInGap&&lastRest.leavesInGap.length?`<br><span style="color:var(--cyan);font-size:10px">Includes: ${lastRest.leavesInGap.join(', ')}</span>`:''}
       </div>
     </div>`;
   } else {
@@ -2778,12 +2793,12 @@ function stripTerminal(code) {
 // LEAVE DEFINITIONS — earliest report times (editable in Guide)
 // ══════════════════════════════════════════════════════════
 const LEAVE_DEFAULTS = {
-  OFG: { name:'Golden Day Off',        code:'OFG', earliestHHMM:'00:01', color:'#4a9eff' },
-  SL:  { name:'Sick Leave',            code:'SL',  earliestHHMM:'06:00', color:'#ff6b6b' },
-  CL:  { name:'Casual Leave',          code:'CL',  earliestHHMM:'00:05', color:'#ffd93d' },
-  PCL: { name:'Planned Casual Leave',  code:'PCL', earliestHHMM:'10:00', color:'#6bcb77' },
-  PL:  { name:'Privileged Leave',      code:'PL',  earliestHHMM:'10:00', color:'#9b59b6' },
-  OFB: { name:'Blue Point Off',        code:'OFB', earliestHHMM:'00:01', color:'#1abc9c' },
+  OFG: { name:'Golden Day Off',        code:'OFG', earliestHHMM:'00:01', color:'#4a9eff', countsAsWeeklyRest:true  },
+  SL:  { name:'Sick Leave',            code:'SL',  earliestHHMM:'06:00', color:'#ff6b6b', countsAsWeeklyRest:false },
+  CL:  { name:'Casual Leave',          code:'CL',  earliestHHMM:'00:05', color:'#ffd93d', countsAsWeeklyRest:true  },
+  PCL: { name:'Planned Casual Leave',  code:'PCL', earliestHHMM:'10:00', color:'#6bcb77', countsAsWeeklyRest:true  },
+  PL:  { name:'Privileged Leave',      code:'PL',  earliestHHMM:'10:00', color:'#9b59b6', countsAsWeeklyRest:false },
+  OFB: { name:'Blue Point Off',        code:'OFB', earliestHHMM:'00:01', color:'#1abc9c', countsAsWeeklyRest:false },
 };
 
 function getLeaveConfig() {
@@ -2862,10 +2877,9 @@ function logLeave() {
       animation:fadeUp .2s ease">
       <span style="font-size:20px">✅</span>
       <div>
-        <div style="font-family:var(--sans);font-weight:700;font-size:13px">Leave logged</div>
+        <div style="font-family:var(--sans);font-weight:700;font-size:13px">Leave logged — ${lv.name}</div>
         <div style="font-size:11px;color:var(--muted);margin-top:2px">
-          ${lv.name} · ${fmtDate(date)}<br>
-          Earliest report: <strong style="color:var(--cyan)">${lv.earliestHHMM}</strong> on ${fmtDate(nextDate)}
+          ${fmtDate(date)} · Earliest report <strong style="color:var(--cyan)">${lv.earliestHHMM}</strong> on ${fmtDate(nextDate)}
         </div>
       </div>
     </div>`;
@@ -2879,28 +2893,37 @@ function renderLeaveConfigTable() {
   const el = document.getElementById('leave-config-table');
   if (!el) return;
   el.innerHTML = Object.values(cfg).map(lv => `
-    <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;
       background:var(--panel2);border-radius:8px;margin-bottom:6px;
       border-left:3px solid ${lv.color}">
       <div style="flex:1">
-        <div style="font-size:11px;font-weight:700;color:var(--text)">${lv.name} (${lv.code})</div>
-        <div style="font-size:10px;color:var(--muted)">Earliest report next day:</div>
+        <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:4px">${lv.name} (${lv.code})</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:10px;color:var(--muted)">Earliest report:</span>
+          <input type="time" id="leave-time-${lv.code}" value="${lv.earliestHHMM}"
+            style="width:85px;background:var(--panel3);border:1px solid var(--edge2);
+                   border-radius:6px;color:var(--text);font-family:var(--mono);
+                   font-size:12px;padding:4px 6px">
+          <label style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--muted);cursor:pointer">
+            <input type="checkbox" id="leave-wr-${lv.code}" ${lv.countsAsWeeklyRest?'checked':''}
+              style="width:15px;height:15px;cursor:pointer;accent-color:var(--cyan)">
+            Count as weekly rest
+          </label>
+        </div>
       </div>
-      <input type="time" id="leave-time-${lv.code}" value="${lv.earliestHHMM}"
-        style="width:90px;background:var(--panel3);border:1px solid var(--edge2);
-               border-radius:6px;color:var(--text);font-family:var(--mono);
-               font-size:13px;padding:5px 8px;text-align:center">
     </div>`).join('');
 }
 
 function saveLeaveConfigFromGuide() {
   const cfg = getLeaveConfig();
   for (const code in cfg) {
-    const el = document.getElementById(`leave-time-${code}`);
-    if (el && el.value) cfg[code].earliestHHMM = el.value;
+    const timeEl = document.getElementById(`leave-time-${code}`);
+    const wrEl   = document.getElementById(`leave-wr-${code}`);
+    if (timeEl && timeEl.value) cfg[code].earliestHHMM = timeEl.value;
+    if (wrEl) cfg[code].countsAsWeeklyRest = wrEl.checked;
   }
   saveLeaveConfig(cfg);
-  alert('✓ Leave times saved!');
+  alert('✓ Leave settings saved!');
 }
 
 function resetLeaveConfig() {
