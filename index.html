@@ -1343,7 +1343,9 @@ function buildDutiesHTML(list, allSorted) {
 
     if (prev && prev.debrief && d.report) {
       // ── Standard rest calculation ──
-      penalty = prev.travelPenalty !== false;
+      // After deadhead-only: min rest = 10h (no penalty) per ops manual
+      const isDeadhead = prev.dtype === 'flight-deadhead';
+      penalty = isDeadhead ? false : prev.travelPenalty !== false;
       const pDebDT = getDebriefDT(prev);
       const cRepDT = getReportDT(d);
       const prevIsHomeSB = prev.dtype === 'standby-home';
@@ -1352,7 +1354,7 @@ function buildDutiesHTML(list, allSorted) {
       const restEndDT   = new Date(cRepDT.getTime() - 45 * 60000);
       restH = +((restEndDT - restStartDT) / 3600000).toFixed(2);
       const penaltyMins = penalty ? 30 : 0;
-      minR  = 12;
+      minR  = isDeadhead ? 10 : 12; // 10h after deadhead, 12h otherwise
       restOk = restH >= (minR + penaltyMins / 60);
       // Standard earliest legal report from last duty
       const stdEarliestDT = new Date(restStartDT.getTime() + (minR*60 + penaltyMins + 45) * 60000);
@@ -1409,17 +1411,18 @@ function buildDutiesHTML(list, allSorted) {
           ? '+45min travel → Rest starts (airport standby ends)'
           : '+45min travel → Rest starts (after debrief)';
 
+      const leaveOnly = !restOk===false && prevLeave && earliestLegalDT && !ok;
       restCardHTML = `<div style="
         display:flex;align-items:flex-start;gap:10px;
         margin:0 4px;padding:9px 12px;
-        background:${ok?'var(--green-dim)':'var(--red-dim)'};
-        border:1px solid ${ok?'rgba(0,230,118,.25)':'rgba(255,77,77,.25)'};
+        background:${ok?'var(--green-dim)':restOk?'rgba(245,166,35,.1)':'var(--red-dim)'};
+        border:1px solid ${ok?'rgba(0,230,118,.25)':restOk?'rgba(245,166,35,.3)':'rgba(255,77,77,.25)'};
         border-radius:8px;margin-bottom:6px;font-size:11px">
-        <span style="font-size:16px;margin-top:1px">${ok?'💤':'⛔'}</span>
+        <span style="font-size:16px;margin-top:1px">${ok?'💤':restOk?'⚠':'⛔'}</span>
         <div style="flex:1">
-          <div style="font-weight:700;color:${restOk?'var(--green)':'var(--red)'}">
+          <div style="font-weight:700;color:${ok?'var(--green)':restOk?'var(--amber)':'var(--red)'}">
             Rest: ${restHH}h ${String(restMM).padStart(2,'00')}m
-            <span style="font-size:9px;font-weight:400;color:var(--muted);margin-left:4px">(min 12h${penalty?'+30m':''} · §2.10.1${penalty?' + §2.10.5':''})</span>
+            <span style="font-size:9px;font-weight:400;color:var(--muted);margin-left:4px">(min ${minR}h${penalty?'+30m':''} · §2.10.1${penalty?' + §2.10.5':''})</span>
           </div>
           <div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.8">
             ${startLabel}: <strong>${fmt2(rStart)}</strong> → Ends: ${fmt2(rEnd)}<br>
@@ -1429,9 +1432,17 @@ function buildDutiesHTML(list, allSorted) {
               if (!restOk) {
                 const minMins = (minR*60) + (penalty?30:0);
                 const actualMins = Math.round(restH * 60);
-                const shortMins = minMins - actualMins;
+                const shortMins = Math.max(0, minMins - actualMins);
                 const shortH = Math.floor(shortMins/60), shortM = shortMins%60;
                 return `⛔ Rest below minimum · Need <strong style="color:var(--red)">${shortH>0?shortH+'h ':''}${String(shortM).padStart(2,'0')}m more</strong>`;
+              }
+              // Rest is ok but leave constraint violated
+              if (prevLeave && earliestLegalDT) {
+                const cRepDT3 = getReportDT(d);
+                const diffMs  = earliestLegalDT - cRepDT3;
+                const diffM   = Math.ceil(Math.max(0, diffMs) / 60000);
+                const dH = Math.floor(diffM/60), dM = diffM%60;
+                return `⛔ Before leave earliest report (${prevLeave.leaveCode}) · Need <strong style="color:var(--red)">${dH>0?dH+'h ':''}${String(dM).padStart(2,'0')}m more</strong>`;
               }
               return '⛔ Reported before earliest legal time';
             })()}
@@ -2002,15 +2013,14 @@ function getReportDT(duty) {
 
 function calcNextReportDT(lastDuty, travelPenalty) {
   if (!lastDuty || !lastDuty.debrief) return null;
-  // Use getDebriefDT to correctly handle midnight crossover
   const debriefDT     = getDebriefDT(lastDuty);
   if (!debriefDT) return null;
-  const minRestH      = 12;
-  const penaltyMins   = travelPenalty !== false ? 30 : 0;
+  const isDeadhead    = lastDuty.dtype === 'flight-deadhead';
+  const minRestH      = isDeadhead ? 10 : 12;
+  const penaltyMins   = (!isDeadhead && travelPenalty !== false) ? 30 : 0;
   const isLastHomeSB  = lastDuty.dtype === 'standby-home';
-  const travelHome    = isLastHomeSB ? 0 : 45; // home SB: no travel; apt SB or flight: 45min
+  const travelHome    = isLastHomeSB ? 0 : 45;
   const travelAirport = 45;
-  // rest starts at debriefDT + travelHome, then 12h + penalty, then 45min to airport
   const totalMins = travelHome + (minRestH * 60) + penaltyMins + travelAirport;
   return new Date(debriefDT.getTime() + totalMins * 60000);
 }
@@ -2195,10 +2205,11 @@ function renderNextReport() {
     // Also show next legal report (from last completed duty)
     let legalRepStr = '';
     if (prevDuty && prevDuty.debrief) {
-      const penalty2      = prevDuty.travelPenalty !== false;
+      const isDH2         = prevDuty.dtype === 'flight-deadhead';
+      const penalty2      = !isDH2 && prevDuty.travelPenalty !== false;
       const pDebDT2       = getDebriefDT(prevDuty);
       const penMins2      = penalty2 ? 30 : 0;
-      const minR2         = 12;
+      const minR2         = isDH2 ? 10 : 12;
       const prevIsHomeSB2 = prevDuty.dtype === 'standby-home';
       const travelHome2   = prevIsHomeSB2 ? 0 : 45;
       const rStart2       = new Date(pDebDT2.getTime() + travelHome2 * 60000);
@@ -2210,12 +2221,13 @@ function renderNextReport() {
       const legalDT2      = new Date(rStart2.getTime() + (minR2*60 + penMins2 + 45)*60000);
       const legalOk2      = repDT >= legalDT2;
       const lStr2     = fmtAsISTtime(legalDT2) + ' · ' + fmtAsIST(legalDT2).slice(6);
+      const minLabel2 = isDH2 ? '10h (deadhead)' : `12h${penalty2?'+30m':''}`;
       legalRepStr = `<div style="margin-top:8px;padding:8px 10px;background:${(restOk2&&legalOk2)?'var(--green-dim)':'var(--red-dim)'};border-radius:7px;border:1px solid ${(restOk2&&legalOk2)?'rgba(0,230,118,.25)':'rgba(255,77,77,.25)'}">
         <div style="font-size:11px;font-weight:700;color:${(restOk2&&legalOk2)?'var(--green)':'var(--red)'}">
           ${(restOk2&&legalOk2)?'✓ Rest compliant':'⛔ '+(restOk2?'Reported before legal time':'Rest below minimum')}
         </div>
         <div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.7">
-          Actual rest: <strong style="color:${restOk2?'var(--green)':'var(--red)'}">${arHH2}h ${String(arMM2).padStart(2,'0')}m</strong> (min 12h${penalty2?'+30m':''} · §2.10.1${penalty2?' + §2.10.5':''})<br>
+          Actual rest: <strong style="color:${restOk2?'var(--green)':'var(--red)'}">${arHH2}h ${String(arMM2).padStart(2,'0')}m</strong> (min ${minLabel2} · §2.10.1${penalty2?' + §2.10.5':''})<br>
           Earliest legal report: <strong style="color:${legalOk2?'var(--green)':'var(--red)'}">${lStr2}</strong>${penalty2?' <span style="color:var(--amber)">+30m §2.10.5</span>':''}
         </div>
       </div>`;
@@ -2867,7 +2879,8 @@ function logLeave() {
   duties.sort((a,b) => a.date.localeCompare(b.date));
   persist(duties); renderDutiesFull(); renderDash();
 
-  const resEl = document.getElementById('leave-result');
+  // Show toast in log-result (same position as duty logged toast)
+  const resEl = document.getElementById('log-result');
   if (resEl) {
     resEl.innerHTML = `<div style="
       background:var(--green-dim);
@@ -2883,6 +2896,8 @@ function logLeave() {
         </div>
       </div>
     </div>`;
+    // Switch to duty tab so toast is visible, then auto-dismiss
+    logTab('duty');
     setTimeout(() => { if(resEl) resEl.innerHTML=''; }, 5000);
   }
   document.getElementById('leave-date').value = '';
