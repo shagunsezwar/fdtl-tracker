@@ -689,8 +689,6 @@ Debriefing time: 2300"></textarea>
     <button class="btn btn-cyan" onclick="logFlight()">+ Log duty</button>
   </div>
 
-  <div id="log-result"></div>
-
   </div><!-- end log-duty-section -->
 
   <!-- LEAVE SECTION -->
@@ -724,7 +722,8 @@ Debriefing time: 2300"></textarea>
     </div>
   </div><!-- end log-leave-section -->
 
-  <div id="leave-result"></div>
+  <!-- Single result toast — always visible regardless of active tab -->
+  <div id="log-result"></div>
 
 </div><!-- end log -->
 
@@ -2897,7 +2896,7 @@ function logLeave() {
       </div>
     </div>`;
     // Switch to duty tab so toast is visible, then auto-dismiss
-    logTab('duty');
+    // Show toast — always visible as it's outside both sections
     setTimeout(() => { if(resEl) resEl.innerHTML=''; }, 5000);
   }
   document.getElementById('leave-date').value = '';
@@ -3601,14 +3600,40 @@ Save anyway?`
     if (restAfter2 > dl168 && !covered2) { weeklyViolation168 = true; break; }
   }
 
-  // Effective status including 168h check
-  const effectiveStatus = weeklyViolation168 ? 'bad' : status;
-  const effectiveIssues = weeklyViolation168
-    ? [...issues, '168h weekly rest rule violated (§2.10.6)']
-    : issues;
+  // Check leave earliest report constraint
+  // Find the immediately preceding leave before this duty
+  const allSortedLog = [...duties].sort((a,b) => a.date.localeCompare(b.date) || a.report.localeCompare(b.report));
+  const newDutyIdxLog = allSortedLog.findIndex(x => x.id === d.id);
+  let prevLeaveLog = null;
+  for (let pi = newDutyIdxLog - 1; pi >= 0; pi--) {
+    if (allSortedLog[pi].dtype === 'leave') { prevLeaveLog = allSortedLog[pi]; }
+    break;
+  }
+  let leaveViolation = false;
+  let leaveViolationMsg = '';
+  if (prevLeaveLog && prevLeaveLog.leaveEarliestReport && prevLeaveLog.leaveNextDate && dRepDT2) {
+    const [lh,lm] = prevLeaveLog.leaveEarliestReport.split(':').map(Number);
+    const lvParts = prevLeaveLog.leaveNextDate.split('-').map(Number);
+    const leaveEarliestDT = new Date(Date.UTC(lvParts[0], lvParts[1]-1, lvParts[2], lh, lm, 0));
+    if (dRepDT2 < leaveEarliestDT) {
+      leaveViolation = true;
+      const diffM = Math.ceil((leaveEarliestDT - dRepDT2) / 60000);
+      const dH = Math.floor(diffM/60), dM = diffM%60;
+      leaveViolationMsg = `Report before ${prevLeaveLog.leaveCode} earliest time (${prevLeaveLog.leaveEarliestReport}) — need ${dH>0?dH+'h ':''}${String(dM).padStart(2,'0')}m later`;
+    }
+  }
 
-  // Update stored duty status if 168h violation found
-  if (weeklyViolation168 && status !== 'bad') {
+  // Effective status combining all violations
+  const anyViolation   = weeklyViolation168 || leaveViolation;
+  const effectiveStatus = anyViolation ? 'bad' : status;
+  const effectiveIssues = [
+    ...issues,
+    ...(weeklyViolation168 ? ['168h weekly rest rule violated (§2.10.6)'] : []),
+    ...(leaveViolation ? [leaveViolationMsg] : []),
+  ];
+
+  // Update stored duty status if any violation found
+  if (anyViolation && status !== 'bad') {
     const idx = duties.findIndex(x => x.id === d.id);
     if (idx !== -1) {
       duties[idx].status = 'bad';
