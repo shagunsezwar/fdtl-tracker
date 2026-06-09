@@ -1364,15 +1364,10 @@ function buildDutiesHTML(list, allSorted) {
     // If there's a leave between prev duty and this duty,
     // earliest report must also satisfy leave's leaveEarliestReport on leaveNextDate
     if (prevLeave && prevLeave.leaveEarliestReport && prevLeave.leaveNextDate) {
-      const [lh,lm] = prevLeave.leaveEarliestReport.split(':').map(Number);
-      const lvDateParts = prevLeave.leaveNextDate.split('-').map(Number);
-      const leaveEarliestDT = new Date(Date.UTC(lvDateParts[0], lvDateParts[1]-1, lvDateParts[2],
-        lh, lm, 0));
-      // Take the LATER of standard rest constraint and leave constraint
+      const leaveEarliestDT = istDT(prevLeave.leaveNextDate, prevLeave.leaveEarliestReport);
       if (!earliestLegalDT || leaveEarliestDT > earliestLegalDT) {
         earliestLegalDT = leaveEarliestDT;
       }
-      // Re-check restOk with the combined constraint
       if (d.report) {
         const cRepDT2 = getReportDT(d);
         if (cRepDT2 < earliestLegalDT) restOk = false;
@@ -1441,7 +1436,8 @@ function buildDutiesHTML(list, allSorted) {
                 const diffMs  = earliestLegalDT - cRepDT3;
                 const diffM   = Math.ceil(Math.max(0, diffMs) / 60000);
                 const dH = Math.floor(diffM/60), dM = diffM%60;
-                return `⛔ Before leave earliest report (${prevLeave.leaveCode}) · Need <strong style="color:var(--red)">${dH>0?dH+'h ':''}${String(dM).padStart(2,'0')}m more</strong>`;
+                const needStr = diffM > 0 ? `Need ${dH>0?dH+'h ':''}${String(dM).padStart(2,'0')}m later` : '1m too early';
+                return `⛔ Before ${prevLeave.leaveCode} earliest report (${prevLeave.leaveEarliestReport}) · ${needStr}`;
               }
               return '⛔ Reported before earliest legal time';
             })()}
@@ -3613,8 +3609,8 @@ Save anyway?`
   let leaveViolationMsg = '';
   if (prevLeaveLog && prevLeaveLog.leaveEarliestReport && prevLeaveLog.leaveNextDate && dRepDT2) {
     const [lh,lm] = prevLeaveLog.leaveEarliestReport.split(':').map(Number);
-    const lvParts = prevLeaveLog.leaveNextDate.split('-').map(Number);
-    const leaveEarliestDT = new Date(Date.UTC(lvParts[0], lvParts[1]-1, lvParts[2], lh, lm, 0));
+    // Build leave earliest DT in IST (same as istDT used throughout the app)
+    const leaveEarliestDT = istDT(prevLeaveLog.leaveNextDate, prevLeaveLog.leaveEarliestReport);
     if (dRepDT2 < leaveEarliestDT) {
       leaveViolation = true;
       const diffM = Math.ceil((leaveEarliestDT - dRepDT2) / 60000);
