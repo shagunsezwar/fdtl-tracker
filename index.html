@@ -490,7 +490,8 @@ textarea{resize:none;min-height:160px;font-size:12px;line-height:1.7}
     <div id="ldg-row"><!-- Rendered by JS --></div>
   </div>
 
-
+  <!-- Pax hours this month (deadhead allowance tracking) -->
+  <div id="pax-hours-card" style="display:none"></div>
 
 </div><!-- end dash -->
 
@@ -598,6 +599,14 @@ Debriefing time: 2300"></textarea>
 ═══════════════════════════════════ -->
 <div id="page-log" class="page">
 
+  <!-- Tab toggle -->
+  <div style="display:flex;gap:8px;margin-bottom:14px">
+    <button id="log-tab-duty" class="btn btn-cyan" style="flex:1;font-size:11px" onclick="logTab('duty')">✈ Duty</button>
+    <button id="log-tab-leave" class="btn btn-ghost" style="flex:1;font-size:11px" onclick="logTab('leave')">🌴 Leaves</button>
+  </div>
+
+  <!-- DUTY SECTION -->
+  <div id="log-duty-section">
   <div class="pcard">
     <div class="pchead">Log a duty</div>
 
@@ -606,7 +615,7 @@ Debriefing time: 2300"></textarea>
       <select id="l-dtype" onchange="logDtypeChange()">
         <option value="flight">Flight duty</option>
         <option value="flight-deadhead">Flight duty + Deadhead</option>
-        <option value="positioning">Positioning / Deadhead only</option>
+        <option value="positioning">Deadhead only</option>
         <option value="standby-home">Standby — home/hotel</option>
         <option value="standby-apt">Standby — airport</option>
       </select>
@@ -619,7 +628,7 @@ Debriefing time: 2300"></textarea>
       </div>
       <div class="fg" id="field-route">
         <label class="fl">Route</label>
-        <input type="text" id="l-route" placeholder="BLR-DEL-BLR" oninput="this.value=this.value.toUpperCase();autoLandingsFromRoute()" style="text-transform:uppercase;letter-spacing:1px">
+        <input type="text" id="l-route" placeholder="BLR-DEL-BLR" oninput="this.value=this.value.toUpperCase().replace(/\s+/g,'-');autoLandingsFromRoute()" style="text-transform:uppercase;letter-spacing:1px">
       </div>
     </div>
 
@@ -636,6 +645,7 @@ Debriefing time: 2300"></textarea>
 
     <div id="night-auto-label" style="font-size:10px;color:var(--amber);font-weight:600;margin-bottom:8px;display:none">🌙 Night duty — FDP encroaches 0000–0600 local (§2.3.11) — Limits: max FDP 10h, max FT 8h, max 2 landings</div>
 
+    <!-- Block hours + Landings (hidden for deadhead-only) -->
     <div class="frow" id="field-block-land">
       <div class="fg">
         <label class="fl">Block hours (HH:MM)</label>
@@ -645,6 +655,15 @@ Debriefing time: 2300"></textarea>
         <label class="fl">Landings</label>
         <input type="number" id="l-land" placeholder="2" min="1" max="20">
       </div>
+    </div>
+
+    <!-- Pax hours — shown for deadhead-only AND flight+deadhead -->
+    <div class="frow" id="field-pax" style="display:none">
+      <div class="fg">
+        <label class="fl">Pax hours (HH:MM)</label>
+        <input type="time" id="l-pax" style="letter-spacing:1px;font-size:16px;color:var(--text)" placeholder="00:00">
+      </div>
+      <div class="fg" id="field-pax-spacer"></div>
     </div>
 
     <div class="frow" id="field-crew-night">
@@ -681,6 +700,39 @@ Debriefing time: 2300"></textarea>
     <button class="btn btn-cyan" onclick="logFlight()">+ Log duty</button>
   </div>
 
+  </div><!-- end log-duty-section -->
+
+  <!-- LEAVE SECTION -->
+  <div id="log-leave-section" style="display:none">
+    <div class="pcard">
+      <div class="pchead">Log a Leave</div>
+
+      <div class="fg" style="margin-bottom:12px">
+        <label class="fl">Leave type</label>
+        <select id="leave-type" onchange="updateLeaveInfo()">
+          <option value="OFG">Golden Day Off (OFG)</option>
+          <option value="SL">Sick Leave (SL)</option>
+          <option value="PL">Privileged Leave (PL)</option>
+          <option value="CL">Casual Leave (CL)</option>
+          <option value="PCL">Planned Casual Leave (PCL)</option>
+        </select>
+      </div>
+
+      <div class="fg" style="margin-bottom:12px">
+        <label class="fl">Date</label>
+        <input type="date" id="leave-date">
+      </div>
+
+      <div id="leave-info-box" style="padding:10px 12px;background:var(--panel2);
+        border:1px solid var(--edge2);border-radius:8px;margin-bottom:14px;
+        font-size:11px;color:var(--muted);line-height:1.8">
+      </div>
+
+      <button class="btn btn-cyan" onclick="logLeave()" style="width:100%">+ Log Leave</button>
+    </div>
+  </div><!-- end log-leave-section -->
+
+  <!-- Single result toast — always visible regardless of active tab -->
   <div id="log-result"></div>
 
 </div><!-- end log -->
@@ -866,6 +918,20 @@ Debriefing time: 2300"></textarea>
     <div class="rule-item"><span class="rule-ref">§2.10.6</span><strong>Weekly rest:</strong> Min 48 continuous hours including 2 local nights, within every 168-hour period</div>
     <div class="rule-item"><span class="rule-ref">§2.13.1</span><strong>Consecutive night ops:</strong> Max 2 consecutive night duties (0000–0600) in any 168-hour period</div>
     <div class="rule-item"><span class="rule-ref">§2.16.1</span><strong>Unforeseen extensions:</strong> FT +1.5h max, FDP +3h max. Cumulative limit: 4h FT and 8h FDP in any 28 days</div>
+  </div>
+
+  <!-- LEAVE RULES & EDITABLE CONFIG -->
+  <div class="guide-step" style="margin-top:16px">
+    <div class="gs-num">🌴</div>
+    <div style="flex:1">
+      <div class="gs-title">Leave Types & Earliest Report Times</div>
+      <div class="gs-body" style="margin-bottom:12px">
+        All leaves run from <strong>00:00 to 23:59</strong> on the leave day. The table below shows when you can earliest report for duty the <strong>next day</strong>. You can edit these times here if rules change.
+      </div>
+      <div id="leave-config-table"></div>
+      <button class="btn btn-cyan" style="width:100%;margin-top:12px" onclick="saveLeaveConfigFromGuide()">💾 Save changes</button>
+      <button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="resetLeaveConfig()">↺ Reset to defaults</button>
+    </div>
   </div>
 
   <div style="height:10px"></div>
@@ -1181,6 +1247,7 @@ function goPage(name, btn) {
   else if (name==='cumul') { renderCumul(); }
   else if (name==='duties-full') { if (!_dutiesYear) initDutiesMonth(); renderDutiesFull(); }
   else if (name==='board') { renderFlightBoard(); startBoardClock(); }
+  else if (name==='guide') { renderLeaveConfigTable(); }
   else { if(_dashTimer){clearInterval(_dashTimer);_dashTimer=null;} }
 }
 
@@ -1255,46 +1322,71 @@ function buildDutiesHTML(list, allSorted) {
   let html = '';
   for (let i=0; i<list.length; i++) {
     const d    = list[i];
-    const dIdx = allSorted.indexOf(d);
-    const prev = dIdx > 0 ? allSorted[dIdx-1] : null;
+    const dIdx = allSorted.findIndex(x => x.id === d.id);
+
+    // ── Leave card ──
+    if (d.dtype === 'leave') {
+      const cfg = getLeaveConfig();
+      const lv  = cfg[d.leaveCode] || {};
+      const col = lv.color || 'var(--cyan)';
+      html += `<div style="padding:12px 14px;background:var(--panel2);
+        border-radius:10px;border-left:4px solid ${col};
+        margin-bottom:6px;display:flex;align-items:center;gap:12px">
+        <div style="font-size:24px">🌴</div>
+        <div style="flex:1">
+          <div style="font-size:12px;font-weight:700;color:var(--text)">${fmtDate(d.date)}</div>
+          <div style="font-size:13px;font-weight:700;color:${col}">${d.leaveName||d.leaveCode} (${d.leaveCode})</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px">
+            Full day 00:00–23:59 · Earliest next report:
+            <strong style="color:var(--cyan)">${d.leaveEarliestReport||'—'} on ${fmtDate(d.leaveNextDate||'')}</strong>
+          </div>
+        </div>
+        <button onclick="delDutyFull(${d.id})" style="background:none;border:none;
+          color:var(--muted);font-size:18px;cursor:pointer;padding:4px">🗑</button>
+      </div>`;
+      continue;
+    }
+
+    // Walk backwards skipping leaves to find prev actual duty
+    let prev = null;
+    for (let pi = dIdx - 1; pi >= 0; pi--) {
+      if (allSorted[pi].dtype !== 'leave') { prev = allSorted[pi]; break; }
+    }
+    // Find immediately preceding leave (if any) right before this duty
+    let prevLeave = null;
+    for (let pi = dIdx - 1; pi >= 0; pi--) {
+      if (allSorted[pi].dtype === 'leave') { prevLeave = allSorted[pi]; }
+      break;
+    }
 
     // ── Rest calculation — §2.10.1 + §2.10.5
-    //
-    // ACTUAL REST  = next report − (prev debrief + 45min travel)
-    //                This is the real rest the pilot got.
-    //
-    // MIN REQUIRED = MAX(prev FDP, 12h)  [§2.10.1]
-    //
-    // EARLIEST LEGAL REPORT = prev debrief + 45min + MAX(prevFDP,12h) + [+30min §2.10.5] + 45min
-    //   The +30min penalty only affects earliest legal, NOT the actual rest display.
-    //
     let restH = null, restOk = true, minR = 12, penalty = false, earliestLegalDT = null;
     if (prev && prev.debrief && d.report) {
-      // §2.10.5 penalty: +30min if travel > 30min (stored on duty, default true)
-      penalty = prev.travelPenalty !== false; // default true unless explicitly disabled
+      const isDeadhead = prev.dtype === 'flight-deadhead';
+      penalty = isDeadhead ? false : prev.travelPenalty !== false;
       const pDebDT = getDebriefDT(prev);
       const cRepDT = getReportDT(d);
-
-      // ── Actual rest = time between rest start and rest end ──
-      // Rest STARTS:
-      // - Home/Hotel standby ends → immediately (already home, no debrief, no travel)
-      // - Airport standby ends    → +45min travel home (no debrief)
-      // - Flight duty ends        → already accounted via getDebriefDT (+30min debrief) + 45min travel
       const prevIsHomeSB    = prev.dtype === 'standby-home';
-      const prevIsAptSB     = prev.dtype === 'standby-apt';
-      const travelHomeMins  = prevIsHomeSB ? 0 : 45; // airport SB or flight: 45min travel
-      // For flight duties, getDebriefDT already returns debrief time (eng-off + 30min)
-      // For standby, getDebriefDT returns end of standby period (no debrief added)
+      const travelHomeMins  = prevIsHomeSB ? 0 : 45;
       const restStartDT = new Date(pDebDT.getTime() + travelHomeMins * 60000);
       const restEndDT   = new Date(cRepDT.getTime() - 45 * 60000);
       restH = +((restEndDT - restStartDT) / 3600000).toFixed(2);
-
       const penaltyMins = penalty ? 30 : 0;
-      minR  = 12;
+      minR  = isDeadhead ? 10 : 12;
       restOk = restH >= (minR + penaltyMins / 60);
-
-      // Earliest legal report = restStart + 12h + 30min penalty + 45min travel to airport
       earliestLegalDT = new Date(restStartDT.getTime() + (minR*60 + penaltyMins + 45) * 60000);
+    }
+
+    // ── Leave constraint — earliest report must also satisfy leave's earliest report ──
+    if (prevLeave && prevLeave.leaveEarliestReport && prevLeave.leaveNextDate) {
+      const leaveEarliestDT = istDT(prevLeave.leaveNextDate, prevLeave.leaveEarliestReport);
+      if (!earliestLegalDT || leaveEarliestDT > earliestLegalDT) {
+        earliestLegalDT = leaveEarliestDT;
+      }
+      if (d.report) {
+        const cRepDT2 = getReportDT(d);
+        if (cRepDT2 < earliestLegalDT) restOk = false;
+      }
     }
 
     // Rest row shown ABOVE the duty card
@@ -1331,19 +1423,24 @@ function buildDutiesHTML(list, allSorted) {
         <div style="flex:1">
           <div style="font-weight:700;color:${restOk?'var(--green)':'var(--red)'}">
             Rest: ${restHH}h ${String(restMM).padStart(2,'00')}m
-            <span style="font-size:9px;font-weight:400;color:var(--muted);margin-left:4px">(min 12h${penalty?'+30m':''} · §2.10.1${penalty?' + §2.10.5':''})</span>
+            <span style="font-size:9px;font-weight:400;color:var(--muted);margin-left:4px">(min ${minR}h${penalty?'+30m':''} · §2.10.1${penalty?' + §2.10.5':''})</span>
           </div>
           <div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.8">
             ${startLabel}: <strong>${fmt2(rStart)}</strong> → Ends: ${fmt2(rEnd)}<br>
             Earliest legal report: <strong style="color:${legalOk?'var(--green)':'var(--red)'}">${elStr}</strong>
             ${penalty?' <span style="color:var(--amber)">+30m §2.10.5</span>':''}
             <br>${ok ? '✓ Compliant' : (() => {
-              if (!restOk) {
+              if (!restOk && (!prevLeave || restH < minR)) {
                 const minMins = (minR*60) + (penalty?30:0);
                 const actualMins = Math.round(restH * 60);
-                const shortMins = minMins - actualMins;
+                const shortMins = Math.max(0, minMins - actualMins);
                 const shortH = Math.floor(shortMins/60), shortM = shortMins%60;
                 return `⛔ Rest below minimum · Need <strong style="color:var(--red)">${shortH>0?shortH+'h ':''}${String(shortM).padStart(2,'0')}m more</strong>`;
+              }
+              if (prevLeave && earliestLegalDT) {
+                const diffM = Math.ceil(Math.max(0, earliestLegalDT - repDT) / 60000);
+                const dH = Math.floor(diffM/60), dM = diffM%60;
+                return `⛔ Before ${prevLeave.leaveCode} earliest report (${prevLeave.leaveEarliestReport}) · Need ${dH>0?dH+'h ':''}${String(dM).padStart(2,'0')}m later`;
               }
               return '⛔ Reported before earliest legal time';
             })()}
@@ -1359,18 +1456,20 @@ function buildDutiesHTML(list, allSorted) {
     const weeklyRests168 = findWeeklyRests();
     const pastRests168   = weeklyRests168.filter(r => r.qualifies);
     let weeklyRestViolation = false;
-    const dRepDT = getReportDT(d);
-    const dDebDT = getDebriefDT(d);
-    for (const wr of pastRests168) {
-      const deadline168 = new Date(wr.end.getTime() + 168*3600000);
-      const nextQR = weeklyRests168.find(r => r.qualifies && r.start > wr.end);
-      if (!dRepDT || dRepDT <= wr.end) continue;
-      if (nextQR && dRepDT >= nextQR.start) continue;
-      if (!dDebDT) continue;
-      const isHomeSB168 = d.dtype === 'standby-home';
-      const restAfter168 = new Date(dDebDT.getTime() + (isHomeSB168 ? 0 : 45)*60000);
-      const alreadyCov = weeklyRests168.some(r => r.qualifies && r.start > wr.end && r.start <= restAfter168);
-      if (restAfter168 > deadline168 && !alreadyCov) { weeklyRestViolation = true; break; }
+    if (d.dtype !== 'leave') {
+      const dRepDT = getReportDT(d);
+      const dDebDT = getDebriefDT(d);
+      for (const wr of pastRests168) {
+        const deadline168 = new Date(wr.end.getTime() + 168*3600000);
+        const nextQR = weeklyRests168.find(r => r.qualifies && r.start > wr.end);
+        if (!dRepDT || dRepDT <= wr.end) continue;
+        if (nextQR && dRepDT >= nextQR.start) continue;
+        if (!dDebDT) continue;
+        const isHomeSB168 = d.dtype === 'standby-home';
+        const restAfter168 = new Date(dDebDT.getTime() + (isHomeSB168 ? 0 : 45)*60000);
+        const alreadyCov = weeklyRests168.some(r => r.qualifies && r.start > wr.end && r.start <= restAfter168);
+        if (restAfter168 > deadline168 && !alreadyCov) { weeklyRestViolation = true; break; }
+      }
     }
 
     const effectiveCls = weeklyRestViolation ? 'bad' : cls;
@@ -1724,7 +1823,7 @@ function buildLandingRow() {
 // Get the active report time string — from current/next duty, or null
 function getActiveDutyReportStr() {
   const now = new Date();  // real epoch
-  const sorted = [...duties].filter(d=>d.report&&d.debrief).sort((a,b)=>a.date.localeCompare(b.date));
+  const sorted = [...duties].filter(d=>d.report&&d.debrief&&d.dtype!=='leave').sort((a,b)=>a.date.localeCompare(b.date));
   for (const d of sorted) {
     const repDT = getReportDT(d);
     const debDT = d.debrief ? getDebriefDT(d) : repDT;
@@ -1903,7 +2002,7 @@ function renderNextReport() {
   const el = document.getElementById('nr-box-el');
   // Always restore FDP limits visibility — standby path may have hidden it
   document.getElementById('fdp-limits-card').style.display = '';
-  const sorted = [...duties].filter(d=>d.report&&d.debrief).sort((a,b)=>a.date.localeCompare(b.date));
+  const sorted = [...duties].filter(d=>d.report&&d.debrief&&d.dtype!=='leave').sort((a,b)=>a.date.localeCompare(b.date));
   if (!sorted.length) {
     el.innerHTML = `<div class="nr-box" style="border-color:rgba(90,112,128,.3)">
       <div class="nr-label">📋 No duties logged</div>
@@ -2292,24 +2391,25 @@ function countLocalNights(restStartEpoch, restEndEpoch) {
 
 // Find all weekly rest periods from logged duties
 // Weekly rest = actual rest window (after travel margins) ≥ 48h with ≥ 2 local nights
+// OR a gap that includes a leave configured to count as weekly rest
 function findWeeklyRests() {
   if (duties.length < 2) return [];
+  const cfg = getLeaveConfig();
 
-  const sorted = [...duties]
-    .filter(d => d.report && (d.debrief || d.dtype.startsWith('standby')))
+  const allSortedAll = [...duties]
+    .filter(d => d.report)
     .sort((a,b) => a.date.localeCompare(b.date) || a.report.localeCompare(b.report));
 
+  const nonLeave = allSortedAll.filter(d => d.dtype !== 'leave');
+
   const rests = [];
-  for (let i = 0; i < sorted.length - 1; i++) {
-    const prev = sorted[i];
-    const next = sorted[i+1];
+  for (let i = 0; i < nonLeave.length - 1; i++) {
+    const prev = nonLeave[i];
+    const next = nonLeave[i+1];
     const prevDebDT = getDebriefDT(prev);
     const nextRepDT = getReportDT(next);
     if (!prevDebDT || !nextRepDT) continue;
 
-    // Apply travel margins — same logic as rest calculations elsewhere:
-    // Rest STARTS: home standby end → immediately; airport SB or flight → +45min travel home
-    // Rest ENDS:   next report − 45min travel to airport
     const prevIsHomeSB  = prev.dtype === 'standby-home';
     const travelHomeMins = prevIsHomeSB ? 0 : 45;
     const restStart = new Date(prevDebDT.getTime() + travelHomeMins * 60000);
@@ -2322,15 +2422,23 @@ function findWeeklyRests() {
     if (gapMins < 48*60) continue;
 
     const localNights = countLocalNights(restStart.getTime(), restEnd.getTime());
+
+    const leavesInGap = allSortedAll.filter(d => {
+      if (d.dtype !== 'leave') return false;
+      const leaveCfg = cfg[d.leaveCode];
+      if (!leaveCfg || !leaveCfg.countsAsWeeklyRest) return false;
+      const leaveDate = new Date(d.date + 'T00:00:00Z');
+      return leaveDate >= new Date(prevDebDT.getTime()) && leaveDate <= nextRepDT;
+    });
+
+    const qualifies = (gapMins >= 48*60 && localNights >= 2) || leavesInGap.length > 0;
+
     rests.push({
-      start:       restStart,
-      end:         restEnd,
-      gapH:        gapMins/60,   // keep as decimal for comparisons
-      gapStr,                    // exact HH:MM for display
-      localNights,
-      qualifies:   gapMins >= 48*60 && localNights >= 2,
-      prevDuty:    prev,
-      nextDuty:    next
+      start: restStart, end: restEnd,
+      gapH: gapMins/60, gapStr, localNights,
+      qualifies,
+      leavesInGap: leavesInGap.map(l => l.leaveName||l.leaveCode),
+      prevDuty: prev, nextDuty: next
     });
   }
   return rests;
@@ -2533,7 +2641,7 @@ function renderCumul() { renderWeeklyRest(); renderCumulative(); }
 function renderRestPeriods() {
   const card = document.getElementById('rest-card');
   const el   = document.getElementById('rest-list');
-    const sorted = [...duties].filter(d=>d.report&&d.debrief).sort((a,b)=>a.date.localeCompare(b.date));
+    const sorted = [...duties].filter(d=>d.report&&d.debrief&&d.dtype!=='leave').sort((a,b)=>a.date.localeCompare(b.date));
   if (sorted.length < 2) { card.style.display='none'; return; }
   card.style.display='block';
   const rows = [];
@@ -2579,6 +2687,55 @@ function renderDash() {
   buildLandingRow();
   recalcFDP();
   renderWeeklyRestWarning();
+  renderPaxHours();
+}
+
+function renderPaxHours() {
+  const el = document.getElementById('pax-hours-card');
+  if (!el) return;
+
+  const ist = nowIST();
+  const curMonth = `${ist.getUTCFullYear()}-${String(ist.getUTCMonth()+1).padStart(2,'0')}`;
+
+  const paxDuties = duties.filter(d =>
+    d.date && d.date.slice(0,7) === curMonth &&
+    (d.dtype === 'positioning' || d.dtype === 'flight-deadhead') &&
+    d.paxHours > 0
+  );
+
+  if (!paxDuties.length) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+
+  const totalPax = paxDuties.reduce((sum, d) => sum + (d.paxHours || 0), 0);
+  const totalH = Math.floor(totalPax);
+  const totalM = Math.round((totalPax - totalH) * 60);
+
+  el.style.display = '';
+  el.innerHTML = `
+    <div class="pcard">
+      <div class="pchead">
+        ✈ Pax hours — this month
+        <span class="pctag">${_MONTHS[ist.getUTCMonth()]}</span>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:10px">
+        <div style="font-size:32px;font-weight:800;font-family:var(--mono);color:var(--cyan)">
+          ${totalH}h ${String(totalM).padStart(2,'0')}m
+        </div>
+        <div style="font-size:11px;color:var(--muted)">across ${paxDuties.length} deadhead${paxDuties.length!==1?'s':''}</div>
+      </div>
+      <div style="font-size:10px;color:var(--muted);line-height:1.8">
+        ${paxDuties.map(d => {
+          const ph = Math.floor(d.paxHours), pm = Math.round((d.paxHours-ph)*60);
+          return `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--edge2)">
+            <span>${fmtDate(d.date)} · ${d.route||'—'}</span>
+            <strong style="color:var(--text)">${ph}h ${String(pm).padStart(2,'0')}m</strong>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
 }
 
 function renderWeeklyRestWarning() {
@@ -2659,6 +2816,149 @@ function stripTerminal(code) {
 }
 
 // ── Roster tab toggle ──
+// ══════════════════════════════════════════════════════════
+// LEAVE DEFINITIONS — earliest report times (editable in Guide)
+// ══════════════════════════════════════════════════════════
+const LEAVE_DEFAULTS = {
+  OFG: { name:'Golden Day Off',       code:'OFG', earliestHHMM:'00:01', color:'#4a9eff', countsAsWeeklyRest:true  },
+  SL:  { name:'Sick Leave',           code:'SL',  earliestHHMM:'06:00', color:'#ff6b6b', countsAsWeeklyRest:false },
+  PL:  { name:'Privileged Leave',     code:'PL',  earliestHHMM:'00:01', color:'#9b59b6', countsAsWeeklyRest:false },
+  CL:  { name:'Casual Leave',         code:'CL',  earliestHHMM:'10:00', color:'#ffd93d', countsAsWeeklyRest:true  },
+  PCL: { name:'Planned Casual Leave', code:'PCL', earliestHHMM:'10:00', color:'#6bcb77', countsAsWeeklyRest:true  },
+};
+
+function getLeaveConfig() {
+  try {
+    const stored = localStorage.getItem('leave_config');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      const merged = { ...LEAVE_DEFAULTS };
+      for (const k in parsed) { if (merged[k]) merged[k] = { ...merged[k], ...parsed[k] }; }
+      return merged;
+    }
+  } catch(e) {}
+  return { ...LEAVE_DEFAULTS };
+}
+
+function saveLeaveConfig(cfg) {
+  localStorage.setItem('leave_config', JSON.stringify(cfg));
+}
+
+function logTab(tab) {
+  document.getElementById('log-duty-section').style.display  = tab==='duty'  ? '' : 'none';
+  document.getElementById('log-leave-section').style.display = tab==='leave' ? '' : 'none';
+  document.getElementById('log-tab-duty').className  = 'btn ' + (tab==='duty'  ? 'btn-cyan' : 'btn-ghost');
+  document.getElementById('log-tab-leave').className = 'btn ' + (tab==='leave' ? 'btn-cyan' : 'btn-ghost');
+  if (tab==='leave') updateLeaveInfo();
+}
+
+function updateLeaveInfo() {
+  const cfg  = getLeaveConfig();
+  const sel  = document.getElementById('leave-type');
+  const code = sel && sel.value;
+  if (!code) return;
+  const lv = cfg[code];
+  if (!lv) return;
+  const el = document.getElementById('leave-info-box');
+  if (el) el.innerHTML = `
+    <div style="color:var(--text);font-weight:600;margin-bottom:4px">${lv.name} (${lv.code})</div>
+    <div>Leave period: <strong>00:00 – 23:59</strong> (full day)</div>
+    <div>Earliest report next day: <strong style="color:var(--cyan)">${lv.earliestHHMM}</strong></div>`;
+}
+
+function logLeave() {
+  const cfg  = getLeaveConfig();
+  const code = document.getElementById('leave-type').value;
+  const date = document.getElementById('leave-date').value;
+  const lv   = cfg[code];
+  if (!date) { alert('Please select a date.'); return; }
+  if (!lv)   { alert('Unknown leave type.'); return; }
+
+  if (duties.find(d => d.date === date && d.leaveCode === code)) {
+    alert(`${lv.name} already logged for ${fmtDate(date)}.`); return;
+  }
+
+  const nextDate = new Date(new Date(date+'T00:00:00Z').getTime()+86400000).toISOString().slice(0,10);
+
+  const d = {
+    id: Date.now() + Math.random(),
+    date, dtype:'leave', leaveCode:code, leaveName:lv.name,
+    leaveColor:lv.color, leaveEarliestReport:lv.earliestHHMM, leaveNextDate:nextDate,
+    report:'00:00', debrief:'23:59', debriefDate:date,
+    fdp:0, block:0, landings:0, night:'no', crew:'2p',
+    route:lv.name, status:'ok', issues:[], warns:[], rosterType:'manual'
+  };
+
+  duties.push(d);
+  duties.sort((a,b) => a.date.localeCompare(b.date));
+  persist(duties); renderDutiesFull(); renderDash();
+
+  const resEl = document.getElementById('log-result');
+  if (resEl) {
+    resEl.innerHTML = `<div style="
+      background:var(--green-dim);
+      border:1px solid rgba(0,230,118,.35);
+      border-radius:10px;padding:12px 14px;margin-top:12px;
+      display:flex;align-items:center;gap:10px;
+      animation:fadeUp .2s ease">
+      <span style="font-size:20px">✅</span>
+      <div>
+        <div style="font-family:var(--sans);font-weight:700;font-size:13px">Leave logged — ${lv.name}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">
+          ${fmtDate(date)} · Earliest report <strong style="color:var(--cyan)">${lv.earliestHHMM}</strong> on ${fmtDate(nextDate)}
+        </div>
+      </div>
+    </div>`;
+    setTimeout(() => { if(resEl) resEl.innerHTML=''; }, 5000);
+  }
+  document.getElementById('leave-date').value = '';
+}
+
+function renderLeaveConfigTable() {
+  const cfg = getLeaveConfig();
+  const el = document.getElementById('leave-config-table');
+  if (!el) return;
+  el.innerHTML = Object.values(cfg).map(lv => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;
+      background:var(--panel2);border-radius:8px;margin-bottom:6px;
+      border-left:3px solid ${lv.color}">
+      <div style="flex:1">
+        <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:4px">${lv.name} (${lv.code})</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:10px;color:var(--muted)">Earliest report:</span>
+          <input type="time" id="leave-time-${lv.code}" value="${lv.earliestHHMM}"
+            style="width:85px;background:var(--panel3);border:1px solid var(--edge2);
+                   border-radius:6px;color:var(--text);font-family:var(--mono);
+                   font-size:12px;padding:4px 6px">
+          <label style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--muted);cursor:pointer">
+            <input type="checkbox" id="leave-wr-${lv.code}" ${lv.countsAsWeeklyRest?'checked':''}
+              style="width:15px;height:15px;cursor:pointer;accent-color:var(--cyan)">
+            Count as weekly rest
+          </label>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function saveLeaveConfigFromGuide() {
+  const cfg = getLeaveConfig();
+  for (const code in cfg) {
+    const timeEl = document.getElementById(`leave-time-${code}`);
+    const wrEl   = document.getElementById(`leave-wr-${code}`);
+    if (timeEl && timeEl.value) cfg[code].earliestHHMM = timeEl.value;
+    if (wrEl) cfg[code].countsAsWeeklyRest = wrEl.checked;
+  }
+  saveLeaveConfig(cfg);
+  alert('✓ Leave settings saved!');
+}
+
+function resetLeaveConfig() {
+  if (!confirm('Reset all leave times to defaults?')) return;
+  localStorage.removeItem('leave_config');
+  renderLeaveConfigTable();
+  alert('✓ Reset to defaults.');
+}
+
 function rosterTab(tab) {
   document.getElementById('roster-ai-section').style.display   = tab==='ai'   ? '' : 'none';
   document.getElementById('roster-text-section').style.display = tab==='text' ? '' : 'none';
@@ -3074,22 +3374,44 @@ function pushDuty(d) {
 // Show/hide flight-only fields based on duty type
 function logDtypeChange() {
   const dtype = document.getElementById('l-dtype').value;
-  const isStandby = dtype.startsWith('standby');
-  const show = !isStandby;
-  ['field-route', 'field-block-land', 'field-crew-night'].forEach(id => {
+  const isStandby    = dtype.startsWith('standby');
+  const isDeadhead   = dtype === 'positioning';
+  const isFlightDH   = dtype === 'flight-deadhead';
+  const showPax      = isDeadhead || isFlightDH;
+
+  // Route + crew/night always hidden for standby
+  ['field-route', 'field-crew-night'].forEach(function(id) {
     const el = document.getElementById(id);
-    if (el) el.style.display = show ? '' : 'none';
+    if (el) el.style.display = isStandby ? 'none' : '';
   });
-  // Also hide night auto label if standby
-  if (isStandby) {
+
+  // Block hours + landings: hidden for deadhead-only
+  const blockEl = document.getElementById('field-block-land');
+  if (blockEl) blockEl.style.display = isDeadhead ? 'none' : (isStandby ? 'none' : '');
+
+  // Pax hours: shown for deadhead-only AND flight+deadhead
+  const paxEl = document.getElementById('field-pax');
+  if (paxEl) paxEl.style.display = showPax ? '' : 'none';
+
+  // Pax label update
+  const paxLabel = document.querySelector('#field-pax .fl');
+  if (paxLabel) paxLabel.textContent = 'Pax hours (HH:MM)';
+
+  // Night auto label
+  if (isStandby || isDeadhead) {
     document.getElementById('night-auto-label').style.display = 'none';
   }
-  // Reset values when switching to standby
+
+  // Reset on switch to standby or deadhead
   if (isStandby) {
     document.getElementById('l-route').value = '';
     document.getElementById('l-block').value = '';
     document.getElementById('l-land').value = '';
     document.getElementById('l-night').value = 'no';
+  }
+  if (!showPax) {
+    const paxInput = document.getElementById('l-pax');
+    if (paxInput) paxInput.value = '';
   }
 }
 
@@ -3189,6 +3511,14 @@ function logFlight() {
     const [bh, bm] = blockRaw.split(':').map(Number);
     block = +(bh + bm/60).toFixed(2);
   }
+  // Pax hours (deadhead-only and flight+deadhead)
+  const paxEl  = document.getElementById('l-pax');
+  const paxRaw = paxEl ? paxEl.value.trim() : '';
+  let paxHours = 0;
+  if (paxRaw && paxRaw.includes(':')) {
+    const [ph, pm] = paxRaw.split(':').map(Number);
+    paxHours = +(ph + pm/60).toFixed(2);
+  }
   const land   = parseInt(document.getElementById('l-land').value)||1;
   const crew   = document.getElementById('l-crew').value;
   const night  = document.getElementById('l-night').value;
@@ -3269,7 +3599,7 @@ Save anyway?`
     debriefDate = new Date(new Date(date+'T00:00:00Z').getTime() + 86400000).toISOString().slice(0,10);
   }
 
-  const d={id:Date.now(),date,debriefDate,route,report,debrief,engoff,block,landings:land,night,crew,dtype,fdp,status,issues,warns,rosterType:'manual',travelPenalty};
+  const d={id:Date.now(),date,debriefDate,route,report,debrief,engoff,block,landings:land,night,crew,dtype,fdp,status,issues,warns,rosterType:'manual',travelPenalty,paxHours};
   duties.push(d); duties.sort((a,b)=>a.date.localeCompare(b.date)); persist(duties);
 
   // Check 168h weekly rest violation for this newly logged duty
@@ -3293,14 +3623,37 @@ Save anyway?`
     if (restAfter2 > dl168 && !covered2) { weeklyViolation168 = true; break; }
   }
 
-  // Effective status including 168h check
-  const effectiveStatus = weeklyViolation168 ? 'bad' : status;
-  const effectiveIssues = weeklyViolation168
-    ? [...issues, '168h weekly rest rule violated (§2.10.6)']
-    : issues;
+  // Check leave earliest report constraint
+  const allSortedLog = [...duties].sort((a,b) => a.date.localeCompare(b.date) || a.report.localeCompare(b.report));
+  const newDutyIdxLog = allSortedLog.findIndex(x => x.id === d.id);
+  let prevLeaveLog = null;
+  for (let pi = newDutyIdxLog - 1; pi >= 0; pi--) {
+    if (allSortedLog[pi].dtype === 'leave') { prevLeaveLog = allSortedLog[pi]; }
+    break;
+  }
+  let leaveViolation = false;
+  let leaveViolationMsg = '';
+  if (prevLeaveLog && prevLeaveLog.leaveEarliestReport && prevLeaveLog.leaveNextDate && dRepDT2) {
+    const leaveEarliestDT = istDT(prevLeaveLog.leaveNextDate, prevLeaveLog.leaveEarliestReport);
+    if (dRepDT2 < leaveEarliestDT) {
+      leaveViolation = true;
+      const diffM = Math.ceil((leaveEarliestDT - dRepDT2) / 60000);
+      const dH = Math.floor(diffM/60), dM = diffM%60;
+      leaveViolationMsg = `Report before ${prevLeaveLog.leaveCode} earliest time (${prevLeaveLog.leaveEarliestReport}) — need ${dH>0?dH+'h ':''}${String(dM).padStart(2,'0')}m later`;
+    }
+  }
 
-  // Update stored duty status if 168h violation found
-  if (weeklyViolation168 && status !== 'bad') {
+  // Effective status combining all violations
+  const anyViolation   = weeklyViolation168 || leaveViolation;
+  const effectiveStatus = anyViolation ? 'bad' : status;
+  const effectiveIssues = [
+    ...issues,
+    ...(weeklyViolation168 ? ['168h weekly rest rule violated (§2.10.6)'] : []),
+    ...(leaveViolation ? [leaveViolationMsg] : []),
+  ];
+
+  // Update stored duty status if any violation found
+  if (anyViolation && status !== 'bad') {
     const idx = duties.findIndex(x => x.id === d.id);
     if (idx !== -1) {
       duties[idx].status = 'bad';
@@ -3341,7 +3694,7 @@ Save anyway?`
     setTimeout(()=>{ resultEl.innerHTML=''; }, 3000);
   }
 
-  ['l-route','l-report','l-debrief','l-block','l-land'].forEach(id=>document.getElementById(id).value='');
+  ['l-route','l-report','l-debrief','l-block','l-land','l-pax'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
   logDtypeChange(); // restore field visibility
   // Reset night status box
   document.getElementById('night-status-icon').textContent='—';
@@ -3927,7 +4280,7 @@ function renderFlightBoard() {
                   String(ist.getUTCMinutes()).padStart(2,'0') + ' IST';
 
   const sorted = [...duties]
-    .filter(d => d.report && d.debrief)
+    .filter(d => d.report && d.debrief && d.dtype !== 'leave')
     .sort((a,b) => a.date.localeCompare(b.date) || a.report.localeCompare(b.report));
 
   if (!sorted.length) {
@@ -4071,6 +4424,11 @@ const nm=nowIST();
 const curMonthVal=`${nm.getUTCFullYear()}-${String(nm.getUTCMonth()+1).padStart(2,'0')}`;
 document.getElementById('paste-month').value = curMonthVal;
 document.getElementById('ai-month').value    = curMonthVal;
+const todayStr = `${nm.getUTCFullYear()}-${String(nm.getUTCMonth()+1).padStart(2,'0')}-${String(nm.getUTCDate()).padStart(2,'0')}`;
+const lDateEl = document.getElementById('l-date');
+if (lDateEl) lDateEl.value = todayStr;
+const lvDateEl = document.getElementById('leave-date');
+if (lvDateEl) lvDateEl.value = todayStr;
 initDutiesMonth();
 startClock();
 renderDash();
