@@ -1279,7 +1279,7 @@ function renderDutiesFull() {
   if (!_dutiesYear) initDutiesMonth();
 
   const el = document.getElementById('duties-full-list');
-  const allSorted = [...duties].sort((a,b) => b.date.localeCompare(a.date) || b.report.localeCompare(a.report));
+  const allSorted = [...duties].sort((a,b) => a.date.localeCompare(b.date) || a.report.localeCompare(b.report));
 
   // Build YYYY-MM key for active month
   const activeMonth = `${_dutiesYear}-${String(_dutiesMonth).padStart(2,'0')}`;
@@ -1293,8 +1293,8 @@ function renderDutiesFull() {
   const rangeEl = document.getElementById('duties-month-range');
   if (labelEl) labelEl.textContent = _MONTHS[_dutiesMonth-1];
 
-  // Show duty count for this month
-  const monthDuties = allSorted.filter(d => d.date.slice(0,7) === activeMonth);
+  // Show duty count for this month — display latest on top, but allSorted stays chronological for rest calc
+  const monthDuties = allSorted.filter(d => d.date.slice(0,7) === activeMonth).reverse();
   if (rangeEl) rangeEl.textContent = monthDuties.length
     ? `${monthDuties.length} ${monthDuties.length===1?'duty':'duties'}`
     : 'No duties this month';
