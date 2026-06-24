@@ -496,9 +496,9 @@ textarea{resize:none;min-height:160px;font-size:12px;line-height:1.7}
 </div><!-- end dash -->
 
 <!-- ═══════════════════════════════════
-     PAGE 2 — ROSTER
+     PAGE 2 — ROSTER (DUMMY — hidden from nav, kept for future use)
 ═══════════════════════════════════ -->
-<div id="page-roster" class="page">
+<div id="page-roster" class="page" style="display:none !important">
 
   <!-- Tab toggle -->
   <div style="display:flex;gap:8px;margin-bottom:14px">
@@ -593,6 +593,97 @@ Debriefing time: 2300"></textarea>
   </div>
 
 </div><!-- end roster -->
+
+<!-- ═══════════════════════════════════
+     PAGE — ALLOWANCE CALCULATOR
+═══════════════════════════════════ -->
+<div id="page-allowance" class="page">
+
+  <div class="pcard">
+    <div class="pchead">💰 Allowance Calculator</div>
+    <div style="font-size:10px;color:var(--muted);margin-bottom:14px">
+      Domestic layovers auto-detected from logged duties. Manually log night allowance, tail-swaps, and transit halts as they happen.
+    </div>
+    <div class="fg" style="margin-bottom:0">
+      <label class="fl">Crew Rank</label>
+      <select id="allow-rank-select" onchange="setAllowRank()">
+        <option value="FO">First Officer</option>
+        <option value="CAPT">Captain</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Year scroller -->
+  <div style="display:flex;align-items:center;gap:0;margin-bottom:6px;
+    background:var(--panel3);border:1px solid var(--edge2);border-radius:8px;overflow:hidden">
+    <button ontouchstart="" ontouchend="shiftAllowYear(-1)" onclick="shiftAllowYear(-1)"
+      style="padding:7px 14px;background:none;border:none;color:var(--muted);
+             font-size:16px;cursor:pointer;flex-shrink:0">‹</button>
+    <div id="allow-year-label"
+      style="flex:1;text-align:center;font-family:var(--mono);font-size:11px;
+             font-weight:600;color:var(--muted);letter-spacing:1px"></div>
+    <button ontouchstart="" ontouchend="shiftAllowYear(1)" onclick="shiftAllowYear(1)"
+      style="padding:7px 14px;background:none;border:none;color:var(--muted);
+             font-size:16px;cursor:pointer;flex-shrink:0">›</button>
+  </div>
+
+  <!-- Month scroller -->
+  <div style="display:flex;align-items:center;gap:0;margin-bottom:14px;
+    background:var(--panel2);border:1px solid var(--edge2);border-radius:10px;overflow:hidden">
+    <button ontouchstart="" ontouchend="shiftAllowMonth(-1)" onclick="shiftAllowMonth(-1)"
+      style="padding:10px 16px;background:none;border:none;color:var(--cyan);
+             font-size:18px;cursor:pointer;flex-shrink:0">‹</button>
+    <div style="flex:1;text-align:center">
+      <div id="allow-month-label"
+        style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text);letter-spacing:.5px"></div>
+      <div id="allow-month-range"
+        style="font-size:9px;color:var(--muted);margin-top:1px"></div>
+    </div>
+    <button ontouchstart="" ontouchend="shiftAllowMonth(1)" onclick="shiftAllowMonth(1)"
+      style="padding:10px 16px;background:none;border:none;color:var(--cyan);
+             font-size:18px;cursor:pointer;flex-shrink:0">›</button>
+  </div>
+
+  <!-- Rate settings (editable) -->
+  <div class="pcard" style="margin-top:14px">
+    <div class="pchead" style="font-size:11px">⚙️ Rates <span style="color:var(--muted);font-weight:400">(editable in Guide)</span></div>
+    <div id="allow-rates-preview" style="font-size:10px;color:var(--muted);line-height:1.8"></div>
+  </div>
+
+  <!-- Manual entry buttons -->
+  <div class="pcard">
+    <div class="pchead" style="font-size:11px">+ Log Manual Entry</div>
+    <div class="frow" style="margin-bottom:10px">
+      <div class="fg" style="margin:0">
+        <label class="fl">Type</label>
+        <select id="allow-entry-type">
+          <option value="night">🌙 Night Allowance (hrs)</option>
+          <option value="tailswap">🔄 Tail-swap</option>
+          <option value="transit">⏱ Transit Halt (mins)</option>
+        </select>
+      </div>
+      <div class="fg" style="margin:0">
+        <label class="fl">Date</label>
+        <input type="date" id="allow-entry-date">
+      </div>
+    </div>
+    <div class="frow" style="margin-bottom:10px">
+      <div class="fg" style="margin:0">
+        <label class="fl" id="allow-entry-val-label">Hours</label>
+        <input type="number" id="allow-entry-value" step="0.1" placeholder="e.g. 4">
+      </div>
+      <div class="fg" style="margin:0"></div>
+    </div>
+    <button class="btn btn-cyan" style="width:100%" onclick="logAllowanceEntry()">+ Add Entry</button>
+  </div>
+
+  <!-- Summary card -->
+  <div id="allowance-summary"></div>
+
+  <!-- Breakdown list -->
+  <div id="allowance-breakdown"></div>
+
+</div><!-- end allowance -->
 
 <!-- ═══════════════════════════════════
      PAGE 3 — LOG FLIGHT
@@ -934,6 +1025,20 @@ Debriefing time: 2300"></textarea>
     </div>
   </div>
 
+  <!-- ALLOWANCE RATES EDITABLE CONFIG -->
+  <div class="guide-step" style="margin-top:16px">
+    <div class="gs-num">💰</div>
+    <div style="flex:1">
+      <div class="gs-title">Allowance Rates</div>
+      <div class="gs-body" style="margin-bottom:12px">
+        Edit your allowance rates per rank below. These feed directly into the Allowance Calculator.
+      </div>
+      <div id="allow-rates-config-table"></div>
+      <button class="btn btn-cyan" style="width:100%;margin-top:12px" onclick="saveAllowRatesFromGuide()">💾 Save changes</button>
+      <button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="resetAllowRates()">↺ Reset to defaults</button>
+    </div>
+  </div>
+
   <div style="height:10px"></div>
 </div><!-- end guide -->
 
@@ -942,7 +1047,7 @@ Debriefing time: 2300"></textarea>
 <!-- NAVBAR -->
 <nav id="nav">
   <div class="nb on" ontouchstart="" ontouchend="nbTap(event,'dash',this)" onclick="goPage('dash',this)"><span class="ni">📊</span>Dash</div>
-  <div class="nb" ontouchstart="" ontouchend="nbTap(event,'roster',this)" onclick="goPage('roster',this)"><span class="ni">📋</span>Roster</div>
+  <div class="nb" ontouchstart="" ontouchend="nbTap(event,'allowance',this)" onclick="goPage('allowance',this)"><span class="ni">💰</span>Allowance</div>
   <div class="nb" ontouchstart="" ontouchend="nbTap(event,'log',this)" onclick="goPage('log',this)"><span class="ni">✏️</span>Log</div>
   <div class="nb" ontouchstart="" ontouchend="nbTap(event,'duties-full',this)" onclick="goPage('duties-full',this)"><span class="ni">🗂</span>Duties</div>
   <div class="nb" ontouchstart="" ontouchend="nbTap(event,'cumul',this)" onclick="goPage('cumul',this)"><span class="ni">📈</span>Limits</div>
@@ -1247,7 +1352,8 @@ function goPage(name, btn) {
   else if (name==='cumul') { renderCumul(); }
   else if (name==='duties-full') { if (!_dutiesYear) initDutiesMonth(); renderDutiesFull(); }
   else if (name==='board') { renderFlightBoard(); startBoardClock(); }
-  else if (name==='guide') { renderLeaveConfigTable(); }
+  else if (name==='guide') { renderLeaveConfigTable(); renderAllowRatesConfigTable(); }
+  else if (name==='allowance') { if (!_allowYear) initAllowMonth(); renderAllowance(); }
   else { if(_dashTimer){clearInterval(_dashTimer);_dashTimer=null;} }
 }
 
@@ -3144,6 +3250,354 @@ function resetLeaveConfig() {
   alert('✓ Reset to defaults.');
 }
 
+// ══════════════════════════════════════════════════════════
+// ALLOWANCE CALCULATOR
+// ══════════════════════════════════════════════════════════
+const ALLOWANCE_DEFAULTS = {
+  FO: {
+    layoverPerDay: 1500,
+    deadheadPerHr: 2000,
+    nightPerHr: 1000,
+    tailSwap: 750,
+    transitPerHr: 500,
+  },
+  CAPT: {
+    layoverPerDay: 3000,
+    deadheadPerHr: 4000,
+    nightPerHr: 2000,
+    tailSwap: 1500,
+    transitPerHr: 1000,
+  }
+};
+
+function getAllowanceConfig() {
+  try {
+    const stored = localStorage.getItem('allowance_config');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return {
+        rank: parsed.rank || 'FO',
+        rates: { FO: {...ALLOWANCE_DEFAULTS.FO, ...(parsed.rates&&parsed.rates.FO)},
+                 CAPT: {...ALLOWANCE_DEFAULTS.CAPT, ...(parsed.rates&&parsed.rates.CAPT)} }
+      };
+    }
+  } catch(e) {}
+  return { rank: 'FO', rates: { ...ALLOWANCE_DEFAULTS } };
+}
+
+function saveAllowanceConfig(cfg) {
+  localStorage.setItem('allowance_config', JSON.stringify(cfg));
+}
+
+// Manual allowance entries (night hrs, tail-swaps, transit halts) stored separately
+function getAllowanceEntries() {
+  try { return JSON.parse(localStorage.getItem('allowance_entries')||'[]'); }
+  catch(e) { return []; }
+}
+function saveAllowanceEntries(entries) {
+  localStorage.setItem('allowance_entries', JSON.stringify(entries));
+}
+
+// ── Month scroller state ──
+let _allowYear = 0, _allowMonth = 0;
+
+function initAllowMonth() {
+  const n = nowIST();
+  _allowYear  = n.getUTCFullYear();
+  _allowMonth = n.getUTCMonth() + 1;
+}
+
+function shiftAllowYear(delta) {
+  _allowYear += delta;
+  renderAllowance();
+}
+
+function shiftAllowMonth(delta) {
+  _allowMonth += delta;
+  if (_allowMonth > 12) { _allowMonth = 1;  _allowYear++; }
+  if (_allowMonth < 1)  { _allowMonth = 12; _allowYear--; }
+  renderAllowance();
+}
+
+function logAllowanceEntry() {
+  const type = document.getElementById('allow-entry-type').value;
+  const date = document.getElementById('allow-entry-date').value;
+  const val  = parseFloat(document.getElementById('allow-entry-value').value);
+
+  if (!date) { alert('Please select a date.'); return; }
+  if (type !== 'tailswap' && (!val || val <= 0)) { alert('Please enter a valid value.'); return; }
+
+  const entries = getAllowanceEntries();
+  entries.push({
+    id: Date.now() + Math.random(),
+    type, date,
+    value: type === 'tailswap' ? 1 : val
+  });
+  saveAllowanceEntries(entries);
+
+  document.getElementById('allow-entry-value').value = '';
+  renderAllowance();
+
+  const resEl = document.getElementById('log-result');
+  // No log-result on this page — show inline confirmation instead
+  const labelMap = { night:'Night Allowance', tailswap:'Tail-swap', transit:'Transit Halt' };
+  const summaryEl = document.getElementById('allowance-summary');
+  if (summaryEl) {
+    const toast = document.createElement('div');
+    toast.style.cssText = 'background:var(--green-dim);border:1px solid rgba(0,230,118,.35);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:var(--green);display:flex;align-items:center;gap:8px;animation:fadeUp .2s ease';
+    toast.innerHTML = `<span style="font-size:16px">✅</span> ${labelMap[type]} logged for ${fmtDate(date)}`;
+    summaryEl.parentNode.insertBefore(toast, summaryEl);
+    setTimeout(()=>toast.remove(), 4000);
+  }
+}
+
+function deleteAllowanceEntry(id) {
+  let entries = getAllowanceEntries();
+  entries = entries.filter(e => e.id !== id);
+  saveAllowanceEntries(entries);
+  renderAllowance();
+}
+
+document.addEventListener('change', function(e) {
+  if (e.target && e.target.id === 'allow-entry-type') {
+    const labelEl = document.getElementById('allow-entry-val-label');
+    const valEl   = document.getElementById('allow-entry-value');
+    if (!labelEl || !valEl) return;
+    if (e.target.value === 'night')    { labelEl.textContent = 'Hours';   valEl.style.display=''; valEl.placeholder='e.g. 4'; }
+    if (e.target.value === 'transit')  { labelEl.textContent = 'Minutes'; valEl.style.display=''; valEl.placeholder='e.g. 120'; }
+    if (e.target.value === 'tailswap') { labelEl.textContent = 'Count (auto = 1)'; valEl.style.display='none'; }
+  }
+});
+
+function setAllowRank() {
+  const cfg = getAllowanceConfig();
+  cfg.rank = document.getElementById('allow-rank-select').value;
+  saveAllowanceConfig(cfg);
+  renderAllowance();
+}
+
+function renderAllowRatesConfigTable() {
+  const cfg = getAllowanceConfig();
+  const el = document.getElementById('allow-rates-config-table');
+  if (!el) return;
+  const fields = [
+    { key:'layoverPerDay', label:'Domestic layover (₹/day)' },
+    { key:'deadheadPerHr', label:'Deadhead — pax hrs (₹/hr)' },
+    { key:'nightPerHr',    label:'Night allowance (₹/hr)' },
+    { key:'tailSwap',      label:'Tail-swap (₹/swap)' },
+    { key:'transitPerHr',  label:'Transit halt (₹/hr, >90min, max 4h)' },
+  ];
+  el.innerHTML = ['FO','CAPT'].map(rank => `
+    <div style="margin-bottom:10px">
+      <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px">
+        ${rank === 'CAPT' ? 'Captain' : 'First Officer'}
+      </div>
+      ${fields.map(f => `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;
+          padding:7px 10px;background:var(--panel2);border-radius:7px;margin-bottom:4px">
+          <span style="font-size:10px;color:var(--muted)">${f.label}</span>
+          <input type="number" id="allow-rate-${rank}-${f.key}" value="${cfg.rates[rank][f.key]}"
+            style="width:80px;background:var(--panel3);border:1px solid var(--edge2);
+                   border-radius:6px;color:var(--text);font-family:var(--mono);
+                   font-size:12px;padding:4px 6px;text-align:right">
+        </div>`).join('')}
+    </div>`).join('');
+}
+
+function saveAllowRatesFromGuide() {
+  const cfg = getAllowanceConfig();
+  const fields = ['layoverPerDay','deadheadPerHr','nightPerHr','tailSwap','transitPerHr'];
+  ['FO','CAPT'].forEach(rank => {
+    fields.forEach(key => {
+      const el = document.getElementById(`allow-rate-${rank}-${key}`);
+      if (el && el.value !== '') cfg.rates[rank][key] = parseFloat(el.value);
+    });
+  });
+  saveAllowanceConfig(cfg);
+  alert('✓ Allowance rates saved!');
+}
+
+function resetAllowRates() {
+  if (!confirm('Reset all allowance rates to defaults?')) return;
+  localStorage.removeItem('allowance_config');
+  renderAllowRatesConfigTable();
+  alert('✓ Reset to defaults.');
+}
+
+function renderAllowance() {
+  if (!_allowYear) initAllowMonth();
+  const cfg = getAllowanceConfig();
+  const rates = cfg.rates[cfg.rank];
+
+  const rankSel = document.getElementById('allow-rank-select');
+  if (rankSel) rankSel.value = cfg.rank;
+
+  const yearEl = document.getElementById('allow-year-label');
+  if (yearEl) yearEl.textContent = String(_allowYear);
+  const labelEl = document.getElementById('allow-month-label');
+  if (labelEl) labelEl.textContent = _MONTHS[_allowMonth-1];
+
+  const activeMonth = `${_allowYear}-${String(_allowMonth).padStart(2,'0')}`;
+
+  // Rates preview
+  const ratesEl = document.getElementById('allow-rates-preview');
+  if (ratesEl) {
+    ratesEl.innerHTML = `
+      <div>Rank: <strong style="color:var(--text)">${cfg.rank === 'CAPT' ? 'Captain' : 'First Officer'}</strong></div>
+      <div>Domestic layover: <strong style="color:var(--text)">₹${rates.layoverPerDay}/day</strong></div>
+      <div>Deadhead (pax hrs): <strong style="color:var(--text)">₹${rates.deadheadPerHr}/hr</strong></div>
+      <div>Night allowance: <strong style="color:var(--text)">₹${rates.nightPerHr}/hr</strong></div>
+      <div>Tail-swap: <strong style="color:var(--text)">₹${rates.tailSwap}/swap</strong></div>
+      <div>Transit halt: <strong style="color:var(--text)">₹${rates.transitPerHr}/hr</strong> (if &gt;90min, max 4h)</div>`;
+  }
+
+  // ── 1. Domestic layovers — auto-detected ──
+  // A duty has a layover if route doesn't end back at BLR (home base)
+  const monthDuties = duties.filter(d => d.date && d.date.slice(0,7) === activeMonth && d.dtype !== 'leave');
+  const layoverDuties = monthDuties.filter(d => {
+    if (!d.route) return false;
+    const parts = d.route.split('-').filter(Boolean);
+    const dest = parts[parts.length-1];
+    return dest && dest !== 'BLR';
+  });
+  const layoverDays = layoverDuties.length;
+  const layoverAmount = layoverDays * rates.layoverPerDay;
+
+  // ── 2. Deadhead — pax hours from logged duties ──
+  const deadheadDuties = monthDuties.filter(d =>
+    (d.dtype === 'positioning' || d.dtype === 'flight-deadhead') && d.paxHours > 0
+  );
+  const deadheadHrs = deadheadDuties.reduce((s,d) => s + (d.paxHours||0), 0);
+  const deadheadAmount = deadheadHrs * rates.deadheadPerHr;
+
+  // ── 3 & 4 & 5. Manual entries: night, tailswap, transit ──
+  const entries = getAllowanceEntries().filter(e => e.date && e.date.slice(0,7) === activeMonth);
+  const nightEntries    = entries.filter(e => e.type === 'night');
+  const tailswapEntries = entries.filter(e => e.type === 'tailswap');
+  const transitEntries  = entries.filter(e => e.type === 'transit');
+
+  const nightHrs = nightEntries.reduce((s,e) => s + e.value, 0);
+  const nightAmount = nightHrs * rates.nightPerHr;
+
+  const tailswapCount = tailswapEntries.length;
+  const tailswapAmount = tailswapCount * rates.tailSwap;
+
+  // Transit halt: only counts if >90min, capped at 4h, billed per hour
+  const transitTotalMinsCapped = transitEntries.reduce((s,e) => {
+    if (e.value <= 90) return s;
+    return s + Math.min(e.value, 240);
+  }, 0);
+  const transitHrs = transitTotalMinsCapped / 60;
+  const transitAmount = transitHrs * rates.transitPerHr;
+
+  const grandTotal = layoverAmount + deadheadAmount + nightAmount + tailswapAmount + transitAmount;
+
+  // ── Summary card ──
+  const sumEl = document.getElementById('allowance-summary');
+  if (sumEl) {
+    sumEl.innerHTML = `
+      <div class="pcard">
+        <div class="pchead">📊 Total — ${_MONTHS[_allowMonth-1]} ${_allowYear}</div>
+        <div style="font-size:36px;font-weight:800;font-family:var(--mono);color:var(--cyan);margin-bottom:14px">
+          ₹${grandTotal.toLocaleString('en-IN', {maximumFractionDigits:0})}
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:10px">
+          <div style="background:var(--panel2);border-radius:8px;padding:10px">
+            <div style="color:var(--muted)">🏨 Layovers</div>
+            <div style="font-size:15px;font-weight:700;color:var(--text)">₹${layoverAmount.toLocaleString('en-IN')}</div>
+            <div style="color:var(--muted)">${layoverDays} day${layoverDays!==1?'s':''}</div>
+          </div>
+          <div style="background:var(--panel2);border-radius:8px;padding:10px">
+            <div style="color:var(--muted)">✈ Deadhead</div>
+            <div style="font-size:15px;font-weight:700;color:var(--text)">₹${deadheadAmount.toLocaleString('en-IN')}</div>
+            <div style="color:var(--muted)">${deadheadHrs.toFixed(1)}h pax</div>
+          </div>
+          <div style="background:var(--panel2);border-radius:8px;padding:10px">
+            <div style="color:var(--muted)">🌙 Night</div>
+            <div style="font-size:15px;font-weight:700;color:var(--text)">₹${nightAmount.toLocaleString('en-IN')}</div>
+            <div style="color:var(--muted)">${nightHrs.toFixed(1)}h</div>
+          </div>
+          <div style="background:var(--panel2);border-radius:8px;padding:10px">
+            <div style="color:var(--muted)">🔄 Tail-swaps</div>
+            <div style="font-size:15px;font-weight:700;color:var(--text)">₹${tailswapAmount.toLocaleString('en-IN')}</div>
+            <div style="color:var(--muted)">${tailswapCount} swap${tailswapCount!==1?'s':''}</div>
+          </div>
+          <div style="background:var(--panel2);border-radius:8px;padding:10px;grid-column:1/-1">
+            <div style="color:var(--muted)">⏱ Transit Halts</div>
+            <div style="font-size:15px;font-weight:700;color:var(--text)">₹${transitAmount.toLocaleString('en-IN')}</div>
+            <div style="color:var(--muted)">${transitEntries.length} halt${transitEntries.length!==1?'s':''} · ${transitHrs.toFixed(1)}h billable</div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // ── Breakdown list ──
+  const brEl = document.getElementById('allowance-breakdown');
+  if (brEl) {
+    let html = '';
+    if (layoverDuties.length) {
+      html += `<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:14px 0 6px">Layovers</div>`;
+      html += layoverDuties.map(d => `
+        <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--panel2);
+          border-radius:8px;margin-bottom:5px;font-size:11px">
+          <span>${fmtDate(d.date)} · ${d.route}</span>
+          <strong style="color:var(--text)">₹${rates.layoverPerDay.toLocaleString('en-IN')}</strong>
+        </div>`).join('');
+    }
+    if (deadheadDuties.length) {
+      html += `<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:14px 0 6px">Deadhead (Pax Hours)</div>`;
+      html += deadheadDuties.map(d => `
+        <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--panel2);
+          border-radius:8px;margin-bottom:5px;font-size:11px">
+          <span>${fmtDate(d.date)} · ${d.route||'—'} · ${d.paxHours.toFixed(1)}h</span>
+          <strong style="color:var(--text)">₹${(d.paxHours*rates.deadheadPerHr).toLocaleString('en-IN',{maximumFractionDigits:0})}</strong>
+        </div>`).join('');
+    }
+    if (nightEntries.length) {
+      html += `<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:14px 0 6px">Night Allowance</div>`;
+      html += nightEntries.map(e => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--panel2);
+          border-radius:8px;margin-bottom:5px;font-size:11px">
+          <span>${fmtDate(e.date)} · ${e.value}h</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <strong style="color:var(--text)">₹${(e.value*rates.nightPerHr).toLocaleString('en-IN',{maximumFractionDigits:0})}</strong>
+            <button onclick="deleteAllowanceEntry(${e.id})" style="background:none;border:none;color:var(--red);font-size:14px;cursor:pointer">🗑</button>
+          </div>
+        </div>`).join('');
+    }
+    if (tailswapEntries.length) {
+      html += `<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:14px 0 6px">Tail-swaps</div>`;
+      html += tailswapEntries.map(e => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--panel2);
+          border-radius:8px;margin-bottom:5px;font-size:11px">
+          <span>${fmtDate(e.date)}</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <strong style="color:var(--text)">₹${rates.tailSwap.toLocaleString('en-IN')}</strong>
+            <button onclick="deleteAllowanceEntry(${e.id})" style="background:none;border:none;color:var(--red);font-size:14px;cursor:pointer">🗑</button>
+          </div>
+        </div>`).join('');
+    }
+    if (transitEntries.length) {
+      html += `<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:14px 0 6px">Transit Halts</div>`;
+      html += transitEntries.map(e => {
+        const billable = e.value > 90;
+        const billedMins = Math.min(e.value, 240);
+        const amt = billable ? (billedMins/60)*rates.transitPerHr : 0;
+        return `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--panel2);
+          border-radius:8px;margin-bottom:5px;font-size:11px">
+          <span>${fmtDate(e.date)} · ${e.value}min ${!billable?'<span style="color:var(--muted)">(under 90min, not billable)</span>':''}</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <strong style="color:${billable?'var(--text)':'var(--muted)'}">₹${amt.toLocaleString('en-IN',{maximumFractionDigits:0})}</strong>
+            <button onclick="deleteAllowanceEntry(${e.id})" style="background:none;border:none;color:var(--red);font-size:14px;cursor:pointer">🗑</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+    brEl.innerHTML = html;
+  }
+}
+
 function rosterTab(tab) {
   document.getElementById('roster-ai-section').style.display   = tab==='ai'   ? '' : 'none';
   document.getElementById('roster-text-section').style.display = tab==='text' ? '' : 'none';
@@ -4614,6 +5068,8 @@ const lDateEl = document.getElementById('l-date');
 if (lDateEl) lDateEl.value = todayStr;
 const lvDateEl = document.getElementById('leave-date');
 if (lvDateEl) lvDateEl.value = todayStr;
+const allowDateEl = document.getElementById('allow-entry-date');
+if (allowDateEl) allowDateEl.value = todayStr;
 initDutiesMonth();
 startClock();
 renderDash();

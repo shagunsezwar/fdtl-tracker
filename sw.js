@@ -1,4 +1,4 @@
-const CACHE = 'fdtl-v51';
+const CACHE = 'fdtl-v52';
 const ASSETS = ['/', '/index.html', '/manifest.json', '/icon192.png', '/icon512.png'];
 self.addEventListener('install', e => {
   self.skipWaiting();
