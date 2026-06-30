@@ -602,7 +602,7 @@ Debriefing time: 2300"></textarea>
   <div class="pcard">
     <div class="pchead">💰 Allowance Calculator</div>
     <div style="font-size:10px;color:var(--muted);margin-bottom:14px">
-      Domestic layovers auto-detected from logged duties. Manually log night allowance, tail-swaps, and transit halts as they happen.
+      Domestic layovers, deadhead hours, and night allowance are auto-detected from logged duties. Manually log tail-swaps and transit halts as they happen.
     </div>
     <div class="fg" style="margin-bottom:0">
       <label class="fl">Crew Rank</label>
@@ -657,7 +657,7 @@ Debriefing time: 2300"></textarea>
       <div class="fg" style="margin:0">
         <label class="fl">Type</label>
         <select id="allow-entry-type">
-          <option value="night">🌙 Night Allowance (hrs)</option>
+          <option value="night">🌙 Night Allowance — manual correction (hrs)</option>
           <option value="tailswap">🔄 Tail-swap</option>
           <option value="transit">⏱ Transit Halt (mins)</option>
         </select>
@@ -719,7 +719,7 @@ Debriefing time: 2300"></textarea>
       </div>
       <div class="fg" id="field-route">
         <label class="fl">Route</label>
-        <input type="text" id="l-route" placeholder="BLR-DEL-BLR" oninput="this.value=this.value.toUpperCase().replace(/\s+/g,'-');autoLandingsFromRoute()" style="text-transform:uppercase;letter-spacing:1px">
+        <input type="text" id="l-route" placeholder="BLR-DEL-BLR" oninput="this.value=this.value.toUpperCase().replace(/\s+/g,'-');autoLandingsFromRoute();if(document.getElementById('l-dtype').value==='flight-deadhead')populateDhSectorPicker()" style="text-transform:uppercase;letter-spacing:1px">
       </div>
     </div>
 
@@ -755,6 +755,13 @@ Debriefing time: 2300"></textarea>
         <input type="time" id="l-pax" style="letter-spacing:1px;font-size:16px;color:var(--text)" placeholder="00:00">
       </div>
       <div class="fg" id="field-pax-spacer"></div>
+    </div>
+
+    <!-- Deadhead sector picker — shown only for Flight duty + Deadhead -->
+    <div class="fg" id="field-dh-sector" style="display:none;margin-bottom:12px">
+      <label class="fl">Which sector is the deadhead?</label>
+      <select id="l-dh-sector" onchange="updateDhSectorPreview()"></select>
+      <div id="dh-sector-preview" style="font-size:10px;color:var(--muted);margin-top:6px"></div>
     </div>
 
     <div class="frow" id="field-crew-night">
@@ -1036,6 +1043,32 @@ Debriefing time: 2300"></textarea>
       <div id="allow-rates-config-table"></div>
       <button class="btn btn-cyan" style="width:100%;margin-top:12px" onclick="saveAllowRatesFromGuide()">💾 Save changes</button>
       <button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="resetAllowRates()">↺ Reset to defaults</button>
+    </div>
+  </div>
+
+  <!-- INTERNATIONAL DESTINATIONS EDITABLE CONFIG -->
+  <div class="guide-step" style="margin-top:16px">
+    <div class="gs-num">🌍</div>
+    <div style="flex:1">
+      <div class="gs-title">International Destinations</div>
+      <div class="gs-body" style="margin-bottom:12px">
+        Layovers at these stations are <strong>excluded</strong> from the domestic layover calculation in the Allowance tab, since international layover allowance is paid separately via payroll. Add or remove destinations as your network changes.
+      </div>
+
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        <input type="text" id="intl-add-code" placeholder="IATA (e.g. DXB)" maxlength="4"
+          style="flex:1;background:var(--panel3);border:1px solid var(--edge2);border-radius:7px;
+                 color:var(--text);font-family:var(--mono);font-size:12px;padding:8px 10px;
+                 text-transform:uppercase">
+        <input type="text" id="intl-add-name" placeholder="Destination name"
+          style="flex:2;background:var(--panel3);border:1px solid var(--edge2);border-radius:7px;
+                 color:var(--text);font-size:12px;padding:8px 10px">
+      </div>
+      <button class="btn btn-cyan" style="width:100%;margin-bottom:12px" onclick="addIntlDestination()">+ Add Destination</button>
+
+      <div id="intl-config-table" style="max-height:340px;overflow-y:auto"></div>
+
+      <button class="btn btn-ghost" style="width:100%;margin-top:12px" onclick="resetIntlDestinations()">↺ Reset to default list</button>
     </div>
   </div>
 
@@ -1352,7 +1385,7 @@ function goPage(name, btn) {
   else if (name==='cumul') { renderCumul(); }
   else if (name==='duties-full') { if (!_dutiesYear) initDutiesMonth(); renderDutiesFull(); }
   else if (name==='board') { renderFlightBoard(); startBoardClock(); }
-  else if (name==='guide') { renderLeaveConfigTable(); renderAllowRatesConfigTable(); }
+  else if (name==='guide') { renderLeaveConfigTable(); renderAllowRatesConfigTable(); renderIntlConfigTable(); }
   else if (name==='allowance') { if (!_allowYear) initAllowMonth(); renderAllowance(); }
   else { if(_dashTimer){clearInterval(_dashTimer);_dashTimer=null;} }
 }
@@ -1605,7 +1638,18 @@ function buildDutiesHTML(list, allSorted) {
                 return `<span style="font-size:9px;color:var(--muted);margin-left:6px;letter-spacing:.2px">prev chocks on ≤ <strong style="color:var(--text)">${eo}</strong></span>`;
               })()}
             </div>
-            <div class="dc-route">${d.route||(d.dtype==='flight-deadhead'?'Flight + Deadhead':d.dtype)||'—'}</div>
+            <div class="dc-route">${(() => {
+              if (!d.route) return d.dtype==='flight-deadhead'?'Flight + Deadhead':d.dtype||'—';
+              if (d.dtype !== 'flight-deadhead' || !d.dhSectorText) return d.route;
+              // Highlight the deadhead sector within the route string
+              const parts = d.route.split('-').filter(Boolean);
+              return parts.map((p,i) => {
+                const isDhStart = d.dhSectorIndex && i === d.dhSectorIndex-1;
+                const isDhEnd   = d.dhSectorIndex && i === d.dhSectorIndex;
+                const isDh = isDhStart || isDhEnd;
+                return isDh ? `<span style="color:var(--cyan);font-weight:700">${p}</span>` : p;
+              }).join('-');
+            })()}</div>
           </div>
           <span class="pctag ${cls==='ok'?'green':cls==='warn'?'amber':'red'}">${lbl}</span>
         </div>
@@ -2270,6 +2314,65 @@ function getReportDT(duty) {
   if (!duty || !(duty.actualReport || duty.report)) return null;
   const repTime = duty.actualReport || duty.report;
   return istDT(duty.date, repTime);
+}
+
+// ── Auto night flying allowance ──
+// No night allowance for deadhead — only actual flying (block time) counts.
+// Flying window = block-on → block-off, derived from logged block hours, ending at engine-off.
+// Engine-off = debrief − 30min (or − 15min if last sector of a flight+deadhead duty is the deadhead).
+// Block-on (takeoff) = engine-off − block hours.
+// Counts the portion of that window falling within IST 00:00–06:00, in decimal hours.
+function calcAutoNightHours(duty) {
+  if (!duty || !duty.report || !duty.debrief) return 0;
+  // Only actual flying duties — deadhead-only excluded entirely (no night pay for DH)
+  if (duty.dtype !== 'flight' && duty.dtype !== 'flight-deadhead') return 0;
+  if (!duty.block || duty.block <= 0) return 0;
+
+  const debDT = getDebriefDT(duty);
+  if (!debDT) return 0;
+
+  const debriefOffsetMins = duty.lastSectorIsDeadhead ? 15 : 30;
+  const flyEndDT   = new Date(debDT.getTime() - debriefOffsetMins*60000);   // engine-off / block-off
+  const flyStartDT = new Date(flyEndDT.getTime() - duty.block*3600000);     // block-on (takeoff)
+  if (flyEndDT <= flyStartDT) return 0;
+
+  // For flight+deadhead duties, the deadhead sector's block time should NOT count toward
+  // night allowance. Since block hours are logged as one total figure, and the deadhead
+  // sector's own timing isn't separately tracked, we proportionally exclude it using
+  // sector count as a simple estimate (deadhead sector = 1 of N sectors of the route).
+  let effectiveBlockMs = flyEndDT - flyStartDT;
+  if (duty.dtype === 'flight-deadhead' && duty.route && duty.dhSectorIndex) {
+    const sectorCount = duty.route.split('-').filter(Boolean).length - 1;
+    if (sectorCount > 1) {
+      effectiveBlockMs = effectiveBlockMs * (sectorCount - 1) / sectorCount;
+    } else {
+      effectiveBlockMs = 0; // single-sector duty that is itself the deadhead — no flying
+    }
+  }
+  // Re-anchor the (shortened) flying window to still END at engine-off,
+  // since debrief/engine-off is a fixed real-world timestamp.
+  const adjFlyStartDT = new Date(flyEndDT.getTime() - effectiveBlockMs);
+
+  // Walk through each calendar day the flying window spans, summing overlap with 00:00–06:00 IST
+  let totalMs = 0;
+  let cursor = new Date(adjFlyStartDT.getTime());
+  while (cursor < flyEndDT) {
+    // IST midnight of cursor's day
+    const cursorIST = new Date(cursor.getTime() + (5*60+30)*60000);
+    const yyyy = cursorIST.getUTCFullYear(), mm = cursorIST.getUTCMonth(), dd = cursorIST.getUTCDate();
+    const dayStartIST_UTC = new Date(Date.UTC(yyyy, mm, dd, 0, 0, 0) - (5*60+30)*60000); // 00:00 IST in UTC-epoch
+    const nightWinStart = dayStartIST_UTC;                              // 00:00 IST
+    const nightWinEnd   = new Date(dayStartIST_UTC.getTime() + 6*3600000); // 06:00 IST
+
+    const segStart = cursor > nightWinStart ? cursor : nightWinStart;
+    const segEndCap = flyEndDT < nightWinEnd ? flyEndDT : nightWinEnd;
+    if (segEndCap > segStart) totalMs += (segEndCap - segStart);
+
+    // Advance cursor to next day's 00:00 IST or flyEndDT, whichever first
+    const nextDayStart = new Date(dayStartIST_UTC.getTime() + 86400000);
+    cursor = nextDayStart < flyEndDT ? nextDayStart : flyEndDT;
+  }
+  return +(totalMs / 3600000).toFixed(2);
 }
 
 
@@ -3251,6 +3354,113 @@ function resetLeaveConfig() {
 }
 
 // ══════════════════════════════════════════════════════════
+// INTERNATIONAL DESTINATIONS — editable list (Guide page)
+// Layovers at these stations get a separate intl allowance (paid via payroll),
+// so they are EXCLUDED from the domestic layover calc in the Allowance tab.
+// ══════════════════════════════════════════════════════════
+const INTL_DESTINATIONS_DEFAULT = [
+  { code:'AUH', name:'Abu Dhabi' },
+  { code:'ALA', name:'Almaty' },
+  { code:'AMS', name:'Amsterdam' },
+  { code:'BKK', name:'Bangkok (Suvarnabhumi)' },
+  { code:'DPS', name:'Bali (Denpasar)' },
+  { code:'GYD', name:'Baku' },
+  { code:'CMB', name:'Colombo' },
+  { code:'DMM', name:'Dammam' },
+  { code:'DAC', name:'Dhaka' },
+  { code:'DOH', name:'Doha' },
+  { code:'DXB', name:'Dubai' },
+  { code:'FJR', name:'Fujairah' },
+  { code:'HAN', name:'Hanoi' },
+  { code:'HKG', name:'Hong Kong' },
+  { code:'SGN', name:'Ho Chi Minh City' },
+  { code:'IST', name:'Istanbul' },
+  { code:'CGK', name:'Jakarta' },
+  { code:'JAF', name:'Jaffna' },
+  { code:'KTM', name:'Kathmandu' },
+  { code:'KBV', name:'Krabi' },
+  { code:'KWI', name:'Kuwait City' },
+  { code:'LGK', name:'Langkawi' },
+  { code:'KUL', name:'Kuala Lumpur' },
+  { code:'LHR', name:'London Heathrow' },
+  { code:'MLE', name:'Male' },
+  { code:'MAN', name:'Manchester' },
+  { code:'MRU', name:'Mauritius' },
+  { code:'MCT', name:'Muscat' },
+  { code:'NBO', name:'Nairobi' },
+  { code:'PEN', name:'Penang' },
+  { code:'HKT', name:'Phuket' },
+  { code:'RKT', name:'Ras Al Khaimah' },
+  { code:'RUH', name:'Riyadh' },
+  { code:'SHJ', name:'Sharjah' },
+  { code:'PVG', name:'Shanghai' },
+  { code:'SIN', name:'Singapore' },
+  { code:'TAS', name:'Tashkent' },
+  { code:'TBS', name:'Tbilisi' },
+  { code:'RGN', name:'Yangon' },
+];
+
+function getIntlDestinations() {
+  try {
+    const stored = localStorage.getItem('intl_destinations');
+    if (stored) return JSON.parse(stored);
+  } catch(e) {}
+  return [...INTL_DESTINATIONS_DEFAULT];
+}
+
+function saveIntlDestinations(list) {
+  localStorage.setItem('intl_destinations', JSON.stringify(list));
+}
+
+function isIntlStation(code) {
+  if (!code) return false;
+  const list = getIntlDestinations();
+  return list.some(s => s.code === code.toUpperCase());
+}
+
+function resetIntlDestinations() {
+  if (!confirm('Reset international destinations list to default?')) return;
+  localStorage.removeItem('intl_destinations');
+  renderIntlConfigTable();
+  alert('✓ Reset to defaults.');
+}
+
+function addIntlDestination() {
+  const codeEl = document.getElementById('intl-add-code');
+  const nameEl = document.getElementById('intl-add-name');
+  const code = codeEl.value.trim().toUpperCase();
+  const name = nameEl.value.trim();
+  if (!code || code.length < 3) { alert('Please enter a valid 3-letter IATA code.'); return; }
+  if (!name) { alert('Please enter a destination name.'); return; }
+  const list = getIntlDestinations();
+  if (list.some(s => s.code === code)) { alert(`${code} is already in the list.`); return; }
+  list.push({ code, name });
+  list.sort((a,b) => a.name.localeCompare(b.name));
+  saveIntlDestinations(list);
+  codeEl.value = ''; nameEl.value = '';
+  renderIntlConfigTable();
+}
+
+function removeIntlDestination(code) {
+  let list = getIntlDestinations();
+  list = list.filter(s => s.code !== code);
+  saveIntlDestinations(list);
+  renderIntlConfigTable();
+}
+
+function renderIntlConfigTable() {
+  const el = document.getElementById('intl-config-table');
+  if (!el) return;
+  const list = getIntlDestinations();
+  el.innerHTML = list.map(s => `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;
+      padding:7px 10px;background:var(--panel2);border-radius:7px;margin-bottom:4px">
+      <span style="font-size:11px;color:var(--text)"><strong style="color:var(--cyan)">${s.code}</strong> · ${s.name}</span>
+      <button onclick="removeIntlDestination('${s.code}')" style="background:none;border:none;color:var(--red);font-size:14px;cursor:pointer">🗑</button>
+    </div>`).join('');
+}
+
+// ══════════════════════════════════════════════════════════
 // ALLOWANCE CALCULATOR
 // ══════════════════════════════════════════════════════════
 const ALLOWANCE_DEFAULTS = {
@@ -3453,12 +3663,21 @@ function renderAllowance() {
 
   // ── 1. Domestic layovers — auto-detected ──
   // A duty has a layover if route doesn't end back at BLR (home base)
+  // International destinations are EXCLUDED — those get a separate intl allowance via payroll
   const monthDuties = duties.filter(d => d.date && d.date.slice(0,7) === activeMonth && d.dtype !== 'leave');
   const layoverDuties = monthDuties.filter(d => {
     if (!d.route) return false;
     const parts = d.route.split('-').filter(Boolean);
     const dest = parts[parts.length-1];
-    return dest && dest !== 'BLR';
+    if (!dest || dest === 'BLR') return false;
+    if (isIntlStation(dest)) return false; // excluded — paid separately
+    return true;
+  });
+  const intlLayoverDuties = monthDuties.filter(d => {
+    if (!d.route) return false;
+    const parts = d.route.split('-').filter(Boolean);
+    const dest = parts[parts.length-1];
+    return dest && dest !== 'BLR' && isIntlStation(dest);
   });
   const layoverDays = layoverDuties.length;
   const layoverAmount = layoverDays * rates.layoverPerDay;
@@ -3470,13 +3689,21 @@ function renderAllowance() {
   const deadheadHrs = deadheadDuties.reduce((s,d) => s + (d.paxHours||0), 0);
   const deadheadAmount = deadheadHrs * rates.deadheadPerHr;
 
-  // ── 3 & 4 & 5. Manual entries: night, tailswap, transit ──
+  // ── 3. Night allowance — AUTO-computed from duty block times (IST 00:00–06:00) ──
+  const nightDuties = monthDuties.filter(d => d.dtype === 'flight' || d.dtype === 'flight-deadhead');
+  const autoNightEntries = nightDuties
+    .map(d => ({ duty: d, hrs: calcAutoNightHours(d) }))
+    .filter(x => x.hrs > 0);
+  const autoNightHrs = autoNightEntries.reduce((s,x) => s + x.hrs, 0);
+
+  // ── 4 & 5. Manual entries: tailswap, transit (night is now auto, kept as optional manual addendum) ──
   const entries = getAllowanceEntries().filter(e => e.date && e.date.slice(0,7) === activeMonth);
-  const nightEntries    = entries.filter(e => e.type === 'night');
+  const nightEntries    = entries.filter(e => e.type === 'night'); // manual additions/corrections only
   const tailswapEntries = entries.filter(e => e.type === 'tailswap');
   const transitEntries  = entries.filter(e => e.type === 'transit');
 
-  const nightHrs = nightEntries.reduce((s,e) => s + e.value, 0);
+  const manualNightHrs = nightEntries.reduce((s,e) => s + e.value, 0);
+  const nightHrs = autoNightHrs + manualNightHrs;
   const nightAmount = nightHrs * rates.nightPerHr;
 
   const tailswapCount = tailswapEntries.length;
@@ -3528,6 +3755,11 @@ function renderAllowance() {
             <div style="color:var(--muted)">${transitEntries.length} halt${transitEntries.length!==1?'s':''} · ${transitHrs.toFixed(1)}h billable</div>
           </div>
         </div>
+        ${intlLayoverDuties.length ? `
+        <div style="margin-top:10px;padding:10px 12px;background:rgba(0,180,255,.08);
+          border:1px solid rgba(0,180,255,.25);border-radius:8px;font-size:10px;color:var(--cyan)">
+          🌍 ${intlLayoverDuties.length} international layover${intlLayoverDuties.length!==1?'s':''} this month — excluded here, paid separately via payroll
+        </div>` : ''}
       </div>`;
   }
 
@@ -3536,7 +3768,7 @@ function renderAllowance() {
   if (brEl) {
     let html = '';
     if (layoverDuties.length) {
-      html += `<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:14px 0 6px">Layovers</div>`;
+      html += `<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:14px 0 6px">Domestic Layovers</div>`;
       html += layoverDuties.map(d => `
         <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--panel2);
           border-radius:8px;margin-bottom:5px;font-size:11px">
@@ -3544,17 +3776,47 @@ function renderAllowance() {
           <strong style="color:var(--text)">₹${rates.layoverPerDay.toLocaleString('en-IN')}</strong>
         </div>`).join('');
     }
+    if (intlLayoverDuties.length) {
+      html += `<div style="font-size:9px;color:var(--cyan);text-transform:uppercase;letter-spacing:.6px;margin:14px 0 6px">🌍 International Layovers (excluded — paid separately)</div>`;
+      html += intlLayoverDuties.map(d => `
+        <div style="display:flex;justify-content:space-between;padding:8px 12px;background:rgba(0,180,255,.06);
+          border:1px solid rgba(0,180,255,.2);border-radius:8px;margin-bottom:5px;font-size:11px;color:var(--muted)">
+          <span>${fmtDate(d.date)} · ${d.route}</span>
+          <span style="font-style:italic">via payroll</span>
+        </div>`).join('');
+    }
     if (deadheadDuties.length) {
       html += `<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:14px 0 6px">Deadhead (Pax Hours)</div>`;
-      html += deadheadDuties.map(d => `
+      html += deadheadDuties.map(d => {
+        let routeDisplay = d.route || '—';
+        if (d.dtype === 'flight-deadhead' && d.dhSectorText && d.dhSectorIndex) {
+          const parts = d.route.split('-').filter(Boolean);
+          routeDisplay = parts.map((p,i) => {
+            const isDh = (i === d.dhSectorIndex-1) || (i === d.dhSectorIndex);
+            return isDh ? `<span style="color:var(--cyan);font-weight:700">${p}</span>` : p;
+          }).join('-');
+        } else if (d.dtype === 'positioning') {
+          routeDisplay = `<span style="color:var(--cyan);font-weight:700">${routeDisplay}</span>`;
+        }
+        return `
         <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--panel2);
           border-radius:8px;margin-bottom:5px;font-size:11px">
-          <span>${fmtDate(d.date)} · ${d.route||'—'} · ${d.paxHours.toFixed(1)}h</span>
+          <span>${fmtDate(d.date)} · ${routeDisplay} · ${d.paxHours.toFixed(1)}h</span>
           <strong style="color:var(--text)">₹${(d.paxHours*rates.deadheadPerHr).toLocaleString('en-IN',{maximumFractionDigits:0})}</strong>
+        </div>`;
+      }).join('');
+    }
+    if (autoNightEntries.length) {
+      html += `<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:14px 0 6px">🌙 Night Allowance — auto (block time in IST 0000–0600)</div>`;
+      html += autoNightEntries.map(x => `
+        <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--panel2);
+          border-radius:8px;margin-bottom:5px;font-size:11px">
+          <span>${fmtDate(x.duty.date)} · ${x.duty.route||'—'} · ${x.hrs.toFixed(2)}h in window</span>
+          <strong style="color:var(--text)">₹${(x.hrs*rates.nightPerHr).toLocaleString('en-IN',{maximumFractionDigits:0})}</strong>
         </div>`).join('');
     }
     if (nightEntries.length) {
-      html += `<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:14px 0 6px">Night Allowance</div>`;
+      html += `<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:14px 0 6px">Night Allowance — manual addition</div>`;
       html += nightEntries.map(e => `
         <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--panel2);
           border-radius:8px;margin-bottom:5px;font-size:11px">
@@ -4036,6 +4298,11 @@ function logDtypeChange() {
   const paxLabel = document.querySelector('#field-pax .fl');
   if (paxLabel) paxLabel.textContent = 'Pax hours (HH:MM)';
 
+  // Deadhead sector picker — only for Flight duty + Deadhead
+  const dhSectorEl = document.getElementById('field-dh-sector');
+  if (dhSectorEl) dhSectorEl.style.display = isFlightDH ? '' : 'none';
+  if (isFlightDH) populateDhSectorPicker();
+
   // Night auto label
   if (isStandby || isDeadhead) {
     document.getElementById('night-auto-label').style.display = 'none';
@@ -4052,6 +4319,41 @@ function logDtypeChange() {
     const paxInput = document.getElementById('l-pax');
     if (paxInput) paxInput.value = '';
   }
+}
+
+// Build sector list from route (e.g. BLR-DEL-BLR → [BLR-DEL, DEL-BLR]) and populate dropdown
+function populateDhSectorPicker() {
+  const sel = document.getElementById('l-dh-sector');
+  const previewEl = document.getElementById('dh-sector-preview');
+  if (!sel) return;
+  const route = document.getElementById('l-route').value.trim();
+  const parts = route.split('-').filter(Boolean);
+  if (parts.length < 2) {
+    sel.innerHTML = '<option value="">Enter route first</option>';
+    if (previewEl) previewEl.textContent = '';
+    return;
+  }
+  let opts = '';
+  for (let i = 0; i < parts.length - 1; i++) {
+    opts += `<option value="${i+1}">#${i+1} — ${parts[i]}-${parts[i+1]}</option>`;
+  }
+  const prevVal = sel.value;
+  sel.innerHTML = opts;
+  // Default to last sector (most common case — deadhead positioning back)
+  sel.value = prevVal && parseInt(prevVal) <= (parts.length-1) ? prevVal : String(parts.length-1);
+  updateDhSectorPreview();
+}
+
+function updateDhSectorPreview() {
+  const sel = document.getElementById('l-dh-sector');
+  const previewEl = document.getElementById('dh-sector-preview');
+  if (!sel || !previewEl) return;
+  const route = document.getElementById('l-route').value.trim();
+  const parts = route.split('-').filter(Boolean);
+  const idx = parseInt(sel.value);
+  if (!idx || idx > parts.length-1) { previewEl.textContent = ''; return; }
+  const dhSector = `${parts[idx-1]}-${parts[idx]}`;
+  previewEl.innerHTML = `Deadhead sector: <strong style="color:var(--cyan)">${dhSector}</strong> — this leg will be highlighted in the Allowance tab`;
 }
 
 // Format block hours as HH:MM while typing
@@ -4163,6 +4465,23 @@ function logFlight() {
   const night  = document.getElementById('l-night').value;
   const dtype  = document.getElementById('l-dtype').value;
 
+  // Deadhead sector (only for flight-deadhead)
+  let dhSectorIndex = null, dhSectorText = '';
+  if (dtype === 'flight-deadhead') {
+    const dhSel = document.getElementById('l-dh-sector');
+    if (dhSel && dhSel.value) {
+      dhSectorIndex = parseInt(dhSel.value);
+      const routeParts = route.split('-').filter(Boolean);
+      if (dhSectorIndex && dhSectorIndex <= routeParts.length-1) {
+        dhSectorText = `${routeParts[dhSectorIndex-1]}-${routeParts[dhSectorIndex]}`;
+      }
+    }
+  }
+
+  // Last-sector-is-deadhead → debrief is only 15min after block end (not 30min)
+  const lastSectorIsDeadhead = dtype === 'flight-deadhead' && dhSectorText &&
+    (() => { const rp = route.split('-').filter(Boolean); return dhSectorIndex === rp.length-1; })();
+
   if (!date||!report||!debrief) { alert('Please fill date, report time and debriefing time.'); return; }
   const isStandby = dtype.startsWith('standby');
 
@@ -4205,7 +4524,8 @@ Save anyway?`
 
   const dutyPeriod = calcDutyPeriodH(report, debrief);
   const fdp = isStandby ? dutyPeriod : calcFDPh(report, debrief);
-  const engoff = isStandby ? null : addMins(debrief, -30);
+  // Engine-off: normally debrief − 30min. If last sector is a deadhead, only 15min gap (no walkaround/handover as PF).
+  const engoff = isStandby ? null : addMins(debrief, lastSectorIsDeadhead ? -15 : -30);
   const L = getLimits(land, night, crew);
   const issues=[], warns=[];
 
@@ -4238,7 +4558,7 @@ Save anyway?`
     debriefDate = new Date(new Date(date+'T00:00:00Z').getTime() + 86400000).toISOString().slice(0,10);
   }
 
-  const d={id:Date.now(),date,debriefDate,route,report,debrief,engoff,block,landings:land,night,crew,dtype,fdp,status,issues,warns,rosterType:'manual',travelPenalty,paxHours};
+  const d={id:Date.now(),date,debriefDate,route,report,debrief,engoff,block,landings:land,night,crew,dtype,fdp,status,issues,warns,rosterType:'manual',travelPenalty,paxHours,dhSectorIndex,dhSectorText,lastSectorIsDeadhead};
   duties.push(d); duties.sort((a,b)=>a.date.localeCompare(b.date)); persist(duties);
 
   // Check 168h weekly rest violation for this newly logged duty
