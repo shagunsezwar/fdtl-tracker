@@ -723,7 +723,8 @@ Debriefing time: 2300"></textarea>
       </div>
       <div class="fg" id="field-route">
         <label class="fl">Route</label>
-        <input type="text" id="l-route" placeholder="BLR-DEL-BLR" oninput="this.value=this.value.toUpperCase().replace(/\s+/g,'-');autoLandingsFromRoute();if(document.getElementById('l-dtype').value==='flight-deadhead')populateDhSectorPicker()" style="text-transform:uppercase;letter-spacing:1px">
+        <input type="text" id="l-route" placeholder="BLR-DEL-BLR" oninput="this.value=this.value.toUpperCase().replace(/\s+/g,'-');autoLandingsFromRoute();validateRouteInput();if(document.getElementById('l-dtype').value==='flight-deadhead')populateDhSectorPicker()" style="text-transform:uppercase;letter-spacing:1px">
+        <div id="route-validate-feedback" style="margin-top:5px;line-height:1.8;flex-wrap:wrap;display:flex"></div>
       </div>
     </div>
 
@@ -1122,9 +1123,9 @@ Debriefing time: 2300"></textarea>
     </div>
 
     <!-- International destinations -->
-    <div class="pcard">
+    <div class="pcard" style="margin-bottom:12px">
       <div class="pchead" style="font-size:11px">🌍 International Destinations</div>
-      <div class="gs-body" style="margin-bottom:10px">These stations are excluded from domestic layover calc (paid separately via payroll).</div>
+      <div class="gs-body" style="margin-bottom:10px">Excluded from domestic layover calc — paid separately via payroll.</div>
       <div style="display:flex;gap:6px;margin-bottom:8px">
         <input type="text" id="intl-add-code" placeholder="IATA" maxlength="4"
           style="flex:1;background:var(--panel3);border:1px solid var(--edge2);border-radius:7px;
@@ -1136,6 +1137,13 @@ Debriefing time: 2300"></textarea>
       <button class="btn btn-cyan" style="width:100%;margin-bottom:10px" onclick="addIntlDestination()">+ Add</button>
       <div id="intl-config-table" style="max-height:260px;overflow-y:auto"></div>
       <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="resetIntlDestinations()">↺ Reset to defaults</button>
+    </div>
+
+    <!-- Domestic destinations reference -->
+    <div class="pcard">
+      <div class="pchead" style="font-size:11px">🇮🇳 Domestic Destinations</div>
+      <div class="gs-body" style="margin-bottom:10px">Reference list for route validation — auto-recognised when you type a route.</div>
+      <div id="domestic-dest-table" style="max-height:260px;overflow-y:auto"></div>
     </div>
   </div>
 
@@ -1431,10 +1439,19 @@ function nbTap(e, name, btn) {
 function openDrawer() {
   document.getElementById('drawer').classList.add('open');
   document.getElementById('drawer-overlay').classList.add('open');
-  // Render settings tables each time drawer opens so they're fresh
   renderLeaveConfigTable();
   renderAllowRatesConfigTable();
   renderIntlConfigTable();
+  // Render domestic destinations reference table
+  const domEl = document.getElementById('domestic-dest-table');
+  if (domEl && !domEl.innerHTML) {
+    domEl.innerHTML = DOMESTIC_DESTINATIONS.map(s =>
+      `<div style="display:flex;justify-content:space-between;padding:5px 8px;
+        font-size:10px;border-bottom:1px solid var(--edge2)">
+        <span style="color:var(--muted)">${s.name}</span>
+        <strong style="color:var(--text);font-family:var(--mono)">${s.code}</strong>
+      </div>`).join('');
+  }
 }
 
 function closeDrawer() {
@@ -3485,6 +3502,92 @@ function isIntlStation(code) {
   if (!code) return false;
   const list = getIntlDestinations();
   return list.some(s => s.code === code.toUpperCase());
+}
+
+// ── Domestic destinations ──
+const DOMESTIC_DESTINATIONS = [
+  {code:'AIP',name:'Adampur'},{code:'IXA',name:'Agartala'},{code:'AGX',name:'Agatti'},
+  {code:'AGR',name:'Agra'},{code:'AMD',name:'Ahmedabad'},{code:'AJL',name:'Aizawl'},
+  {code:'ATQ',name:'Amritsar'},{code:'IXU',name:'Aurangabad'},{code:'AYJ',name:'Ayodhya'},
+  {code:'IXB',name:'Bagdogra'},{code:'BEK',name:'Bareilly'},{code:'IXG',name:'Belagavi'},
+  {code:'BLR',name:'Bengaluru'},{code:'BHU',name:'Bhavnagar'},{code:'BHO',name:'Bhopal'},
+  {code:'BBI',name:'Bhubaneswar'},{code:'BKB',name:'Bikaner'},{code:'IXC',name:'Chandigarh'},
+  {code:'MAA',name:'Chennai'},{code:'CJB',name:'Coimbatore'},{code:'CDP',name:'Cuddapah'},
+  {code:'DBR',name:'Darbhanga'},{code:'DED',name:'Dehradun'},{code:'DEL',name:'Delhi'},
+  {code:'DGH',name:'Deoghar'},{code:'DIB',name:'Dibrugarh'},{code:'DMU',name:'Dimapur'},
+  {code:'DIU',name:'Diu'},{code:'RDP',name:'Durgapur'},{code:'GAY',name:'Gaya'},
+  {code:'HDO',name:'Ghaziabad (Hindon)'},{code:'GOI',name:'Goa (Dabolim)'},{code:'GOX',name:'Goa (Mopa)'},
+  {code:'GDB',name:'Gondia'},{code:'GOP',name:'Gorakhpur'},{code:'GAU',name:'Guwahati'},
+  {code:'GWL',name:'Gwalior'},{code:'HBX',name:'Hubballi'},{code:'HYD',name:'Hyderabad'},
+  {code:'IMF',name:'Imphal'},{code:'IDR',name:'Indore'},{code:'HGI',name:'Itanagar'},
+  {code:'JLR',name:'Jabalpur'},{code:'JGB',name:'Jagdalpur'},{code:'JAI',name:'Jaipur'},
+  {code:'JSA',name:'Jaisalmer'},{code:'IXJ',name:'Jammu'},{code:'JGA',name:'Jamnagar'},
+  {code:'JRG',name:'Jharsuguda'},{code:'JDH',name:'Jodhpur'},{code:'JRH',name:'Jorhat'},
+  {code:'DHM',name:'Kangra (Dharamshala)'},{code:'CNN',name:'Kannur'},{code:'KNU',name:'Kanpur'},
+  {code:'HJR',name:'Khajuraho'},{code:'KQH',name:'Kishangarh (Ajmer)'},{code:'COK',name:'Kochi'},
+  {code:'KLH',name:'Kolhapur'},{code:'CCU',name:'Kolkata'},{code:'CCJ',name:'Kozhikode'},
+  {code:'KJB',name:'Kurnool'},{code:'IXL',name:'Leh'},{code:'LKO',name:'Lucknow'},
+  {code:'IXM',name:'Madurai'},{code:'IXE',name:'Mangaluru'},{code:'BOM',name:'Mumbai'},
+  {code:'MYQ',name:'Mysuru'},{code:'NAG',name:'Nagpur'},{code:'ISK',name:'Nashik'},
+  {code:'NMI',name:'Navi Mumbai'},{code:'DXN',name:'Noida (Jewar)'},{code:'PGH',name:'Pantnagar'},
+  {code:'PAT',name:'Patna'},{code:'PNY',name:'Puducherry'},{code:'IXZ',name:'Port Blair'},
+  {code:'PNQ',name:'Pune'},{code:'PXN',name:'Purnea'},{code:'RPR',name:'Raipur'},
+  {code:'RJA',name:'Rajahmundry'},{code:'HSR',name:'Rajkot (Hirasar)'},{code:'IXR',name:'Ranchi'},
+  {code:'REW',name:'Rewa'},{code:'SXV',name:'Salem'},{code:'SHL',name:'Shillong'},
+  {code:'RQY',name:'Shivamogga'},{code:'SAG',name:'Shirdi'},{code:'IXS',name:'Silchar'},
+  {code:'SXR',name:'Srinagar'},{code:'STV',name:'Surat'},{code:'TRV',name:'Thiruvananthapuram'},
+  {code:'TCR',name:'Thoothukudi'},{code:'TRZ',name:'Tiruchirappalli'},{code:'TIR',name:'Tirupati'},
+  {code:'UDR',name:'Udaipur'},{code:'BDQ',name:'Vadodara'},{code:'VNS',name:'Varanasi'},
+  {code:'VGA',name:'Vijayawada'},{code:'VTZ',name:'Visakhapatnam'},
+];
+
+function isDomesticStation(code) {
+  if (!code) return false;
+  return DOMESTIC_DESTINATIONS.some(s => s.code === code.toUpperCase());
+}
+
+function getStationName(code) {
+  if (!code) return '';
+  const uc = code.toUpperCase();
+  const dom = DOMESTIC_DESTINATIONS.find(s => s.code === uc);
+  if (dom) return dom.name;
+  const intl = getIntlDestinations().find(s => s.code === uc);
+  if (intl) return intl.name;
+  return '';
+}
+
+// Validate route — check each airport code, return array of {code, valid, intl}
+function validateRoute(routeStr) {
+  if (!routeStr) return [];
+  const parts = routeStr.split('-').filter(Boolean);
+  return parts.map(code => {
+    const uc = code.toUpperCase();
+    const isDom  = isDomesticStation(uc);
+    const isIntl = isIntlStation(uc);
+    return { code: uc, valid: isDom || isIntl, domestic: isDom, intl: isIntl, name: getStationName(uc) };
+  });
+}
+
+// Render live route validation feedback under the route input
+function validateRouteInput() {
+  const routeVal = document.getElementById('l-route') && document.getElementById('l-route').value.trim();
+  const fbEl = document.getElementById('route-validate-feedback');
+  if (!fbEl || !routeVal) {
+    if (fbEl) fbEl.innerHTML = '';
+    return;
+  }
+  const results = validateRoute(routeVal);
+  if (!results.length) { fbEl.innerHTML = ''; return; }
+  fbEl.innerHTML = results.map(r => {
+    if (r.valid) {
+      const tag = r.intl
+        ? `<span style="color:var(--cyan);font-size:9px">🌍 INTL</span>`
+        : `<span style="color:var(--green);font-size:9px">✓ DOM</span>`;
+      return `<span style="margin-right:8px;font-size:10px">${r.code} ${tag} <span style="color:var(--muted)">${r.name}</span></span>`;
+    } else {
+      return `<span style="margin-right:8px;font-size:10px;color:var(--red)">⚠ ${r.code} — unknown</span>`;
+    }
+  }).join('');
 }
 
 function resetIntlDestinations() {
