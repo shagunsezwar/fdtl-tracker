@@ -469,13 +469,13 @@ textarea{resize:none;min-height:160px;font-size:12px;line-height:1.7}
 <!-- TOPBAR -->
 <div id="topbar">
   <div class="tb-left">
-    <button id="hamburger-btn" ontouchstart="openDrawer();this.style.opacity='.6'" ontouchend="this.style.opacity='1'" onclick="openDrawer()"
-      style="background:none;border:none;color:var(--text);font-size:22px;
+    <div id="hamburger-btn" ontouchstart="" ontouchend="nbTap(event,'_drawer',this)" onclick="openDrawer()"
+      style="color:var(--text);font-size:22px;
              cursor:pointer;padding:4px 10px 4px 2px;line-height:1;
              -webkit-tap-highlight-color:transparent;touch-action:manipulation;
              min-width:36px;min-height:44px;display:flex;align-items:center;justify-content:center">
       ☰
-    </button>
+    </div>
     <div>
       <div class="tb-title">FDTL Monitor</div>
       <div class="tb-sub">IndiGo · OMA Ch.2 · TR13/2026</div>
@@ -1464,6 +1464,7 @@ const sumDP = ds => +ds.reduce((s,d) => {
 function nbTap(e, name, btn) {
   e.preventDefault();
   e.stopPropagation();
+  if (name === '_drawer') { openDrawer(); return; }
   goPage(name, btn);
 }
 
