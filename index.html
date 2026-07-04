@@ -143,6 +143,18 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--m
 #drawer.open{right:0!important}
 #drawer-overlay.open{display:block!important}
 #topbar{position:relative;z-index:10}
+.dmenu-btn{
+  width:100%;display:flex;align-items:center;gap:12px;
+  background:var(--panel2);border:1px solid var(--edge2);
+  border-radius:10px;padding:13px 14px;margin-bottom:8px;
+  text-align:left;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+}
+.dmenu-btn:active{opacity:.7}
+.dmenu-icon{font-size:22px;flex-shrink:0}
+.dmenu-label{font-size:13px;font-weight:600;color:var(--text);font-family:var(--mono)}
+.dmenu-sub{font-size:10px;color:var(--muted);margin-top:2px}
+.dmenu-arr{margin-left:auto;color:var(--muted);font-size:18px;flex-shrink:0}
 
 .pcard{
   background:var(--panel);border:1px solid var(--edge);
@@ -457,7 +469,7 @@ textarea{resize:none;min-height:160px;font-size:12px;line-height:1.7}
 <!-- TOPBAR -->
 <div id="topbar">
   <div class="tb-left">
-    <button id="hamburger-btn" ontouchstart="" ontouchend="openDrawer()" onclick="openDrawer()"
+    <button id="hamburger-btn" ontouchstart="openDrawer();this.style.opacity='.6'" ontouchend="this.style.opacity='1'" onclick="openDrawer()"
       style="background:none;border:none;color:var(--text);font-size:22px;
              cursor:pointer;padding:4px 10px 4px 2px;line-height:1;
              -webkit-tap-highlight-color:transparent;touch-action:manipulation;
@@ -1052,107 +1064,121 @@ Debriefing time: 2300"></textarea>
 <!-- SIDE DRAWER -->
 <div id="drawer-overlay" onclick="closeDrawer()" style="
   display:none;position:fixed;inset:0;z-index:200;
-  background:rgba(0,0,0,.55);transition:opacity .25s">
+  background:rgba(0,0,0,.55)">
 </div>
 <div id="drawer" style="
   position:fixed;top:0;right:-340px;bottom:0;width:320px;
   background:var(--panel);z-index:201;
-  overflow-y:auto;transition:right .25s ease;
+  transition:right .22s ease;
   border-left:1px solid var(--edge);
-  padding-bottom:40px;
-  -webkit-transform:translateZ(0);transform:translateZ(0)">
+  -webkit-transform:translateZ(0);transform:translateZ(0);
+  display:flex;flex-direction:column">
 
-  <!-- Drawer header -->
-  <div style="display:flex;align-items:center;justify-content:space-between;
-    padding:16px 18px;border-bottom:1px solid var(--edge);position:sticky;top:0;
-    background:var(--panel);z-index:1">
-    <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text)">Menu</div>
-    <button ontouchstart="" onclick="closeDrawer()" style="background:none;border:none;
-      color:var(--muted);font-size:22px;cursor:pointer;padding:4px 8px;line-height:1">✕</button>
+  <!-- Drawer header — sticky -->
+  <div id="drawer-header" style="display:flex;align-items:center;justify-content:space-between;
+    padding:14px 16px;border-bottom:1px solid var(--edge);flex-shrink:0;
+    background:var(--panel);position:sticky;top:0;z-index:2">
+    <div style="display:flex;align-items:center;gap:8px">
+      <button id="drawer-back-btn" ontouchstart="drawerBack()" onclick="drawerBack()"
+        style="display:none;background:none;border:none;color:var(--cyan);
+               font-size:20px;cursor:pointer;padding:4px 10px 4px 2px;
+               -webkit-tap-highlight-color:transparent;touch-action:manipulation;min-height:44px">‹</button>
+      <div id="drawer-title" style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text)">Menu</div>
+    </div>
+    <button ontouchstart="closeDrawer()" onclick="closeDrawer()"
+      style="background:none;border:none;color:var(--muted);font-size:20px;
+             cursor:pointer;padding:4px 8px;
+             -webkit-tap-highlight-color:transparent;touch-action:manipulation;min-height:44px">✕</button>
   </div>
 
-  <!-- Guide -->
-  <div style="padding:14px 18px 0">
-    <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:10px">📖 Guide</div>
-    <div style="font-size:11px;color:var(--muted);line-height:1.7;margin-bottom:10px">How to use this app</div>
+  <!-- Scrollable area -->
+  <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch">
 
-    <div class="guide-step" style="margin-bottom:10px">
-      <div class="gs-num" style="min-width:22px;height:22px;font-size:10px">1</div>
-      <div><div class="gs-title">Dashboard — FDP Calculator</div>
-        <div class="gs-body">Enter your <strong>reporting time</strong> and select the number of landings. The app shows your max FDP, max flight time, and when your FDP expires. Night duty and WOCL are auto-detected.</div>
+    <!-- HOME — 6 menu buttons -->
+    <div id="drawer-home" style="padding:10px">
+      <button ontouchstart="openDrawerPage('guide')" onclick="openDrawerPage('guide')" class="dmenu-btn">
+        <span class="dmenu-icon">📖</span><div><div class="dmenu-label">Guide</div><div class="dmenu-sub">How to use this app</div></div><span class="dmenu-arr">›</span>
+      </button>
+      <button ontouchstart="openDrawerPage('fdtl')" onclick="openDrawerPage('fdtl')" class="dmenu-btn">
+        <span class="dmenu-icon">📋</span><div><div class="dmenu-label">FDTL Rules</div><div class="dmenu-sub">Quick reference §2.6–§2.10</div></div><span class="dmenu-arr">›</span>
+      </button>
+      <button ontouchstart="openDrawerPage('settings')" onclick="openDrawerPage('settings')" class="dmenu-btn">
+        <span class="dmenu-icon">⚙️</span><div><div class="dmenu-label">Settings</div><div class="dmenu-sub">Leave types & earliest reporting</div></div><span class="dmenu-arr">›</span>
+      </button>
+      <button ontouchstart="openDrawerPage('allow-rates')" onclick="openDrawerPage('allow-rates')" class="dmenu-btn">
+        <span class="dmenu-icon">💰</span><div><div class="dmenu-label">Allowance Rates</div><div class="dmenu-sub">FO & Captain rates</div></div><span class="dmenu-arr">›</span>
+      </button>
+      <button ontouchstart="openDrawerPage('intl-dest')" onclick="openDrawerPage('intl-dest')" class="dmenu-btn">
+        <span class="dmenu-icon">🌍</span><div><div class="dmenu-label">International Destinations</div><div class="dmenu-sub">Excluded from domestic allowance</div></div><span class="dmenu-arr">›</span>
+      </button>
+      <button ontouchstart="openDrawerPage('dom-dest')" onclick="openDrawerPage('dom-dest')" class="dmenu-btn">
+        <span class="dmenu-icon">🇮🇳</span><div><div class="dmenu-label">Domestic Destinations</div><div class="dmenu-sub">Route validation reference</div></div><span class="dmenu-arr">›</span>
+      </button>
+    </div>
+
+    <!-- SUB: Guide -->
+    <div id="drawer-page-guide" style="display:none;padding:14px">
+      <div class="guide-step"><div class="gs-num">1</div><div><div class="gs-title">Dashboard — FDP Calculator</div><div class="gs-body">Enter your reporting time and select landings. Shows max FDP, max FT, FDP expiry. Night duty and WOCL auto-detected.</div></div></div>
+      <div class="guide-step"><div class="gs-num">2</div><div><div class="gs-title">Log flights manually</div><div class="gs-body">Use the Log page. Report + debrief → FDP auto-calculated. Night duty auto-detected. All duties feed cumulative limits.</div></div></div>
+      <div class="guide-step"><div class="gs-num">3</div><div><div class="gs-title">Log Leaves</div><div class="gs-body">Tap the Leave tab on the Log page. OFG, SL, CL, PCL, PL available. Leaves affect earliest next-duty reporting and can count toward weekly rest.</div></div></div>
+      <div class="guide-step"><div class="gs-num">4</div><div><div class="gs-title">Allowance Calculator</div><div class="gs-body">Layovers, deadhead (pax) hours, and night allowance auto-detected from duties. Log tail-swaps and transit halts manually.</div></div></div>
+      <div class="guide-step"><div class="gs-num">5</div><div><div class="gs-title">Install as an app</div><div class="gs-body">Open fdtl-tracker.vercel.app in Chrome → tap ⋮ → Add to Home screen. Works offline.</div></div></div>
+    </div>
+
+    <!-- SUB: FDTL Rules -->
+    <div id="drawer-page-fdtl" style="display:none;padding:14px">
+      <div class="pcard" style="font-size:11px">
+        <div class="rule-item"><span class="rule-ref">§2.6.1</span><strong>FDP limits (2-pilot day)</strong><br>6 ldg→11h · 5 ldg→11:30h · 4 ldg→12h · 3 ldg→12:30h · 1–2 ldg→13h</div>
+        <div class="rule-item"><span class="rule-ref">§2.6.1.4</span><strong>Night duty:</strong> Max FDP 10h · Max FT 8h · Max 2 landings</div>
+        <div class="rule-item"><span class="rule-ref">§2.10.1</span><strong>Min rest:</strong> Max of preceding FDP or 12h</div>
+        <div class="rule-item"><span class="rule-ref">§2.10.5</span><strong>Travel penalty:</strong> +30min if travel &gt;30min to/from airport</div>
+        <div class="rule-item"><span class="rule-ref">§2.10.1</span><strong>Deadhead min rest:</strong> 10h (no penalty)</div>
+        <div class="rule-item"><span class="rule-ref">§2.10.6</span><strong>Weekly rest:</strong> Min 48h + 2 local nights within 168h</div>
+        <div class="rule-item"><span class="rule-ref">§2.8</span><strong>Cumulative FT:</strong> 7d→35h · 14d→65h · 28d→100h · 365d→1000h</div>
+        <div class="rule-item"><span class="rule-ref">§2.3.11</span><strong>Night duty definition:</strong> FDP encroaches IST 0000–0600</div>
+        <div class="rule-item"><span class="rule-ref">§2.11.2</span><strong>Standby:</strong> Home SB max 12h · Airport SB max 6h</div>
       </div>
     </div>
-    <div class="guide-step" style="margin-bottom:10px">
-      <div class="gs-num" style="min-width:22px;height:22px;font-size:10px">2</div>
-      <div><div class="gs-title">Log flights manually</div>
-        <div class="gs-body">Use the Log page to add duties. Report and debrief times → FDP auto-calculated. Night duty auto-detected. All duties feed cumulative limits.</div>
-      </div>
-    </div>
-    <div class="guide-step" style="margin-bottom:10px">
-      <div class="gs-num" style="min-width:22px;height:22px;font-size:10px">3</div>
-      <div><div class="gs-title">Install as an app</div>
-        <div class="gs-body">Open <strong>fdtl-tracker.vercel.app</strong> in Chrome → tap <strong>⋮</strong> → <strong>Add to Home screen</strong>. Works offline.</div>
-      </div>
-    </div>
 
-    <div style="margin:16px 0 10px;border-top:1px solid var(--edge);padding-top:14px;
-      font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase">FDTL Rules Reference</div>
-    <div class="pcard" style="font-size:10px;padding:10px 12px">
-      <div class="rule-item"><span class="rule-ref">§2.6.1</span><strong>2-pilot FDP limits (day)</strong><br>6 ldg → 11:00h · 5 ldg → 11:30h · 4 ldg → 12:00h · 3 ldg → 12:30h · 2 ldg → 13:00h · 1 ldg → 13:00h</div>
-      <div class="rule-item"><span class="rule-ref">§2.6.1.4</span><strong>Night duty:</strong> Max FDP 10h · FT 8h · 2 ldg</div>
-      <div class="rule-item"><span class="rule-ref">§2.10.1</span><strong>Min rest:</strong> Greater of preceding FDP or 12h</div>
-      <div class="rule-item"><span class="rule-ref">§2.10.6</span><strong>Weekly rest:</strong> Min 48h + 2 local nights within 168h</div>
-      <div class="rule-item"><span class="rule-ref">§2.8</span><strong>Cumulative FT:</strong> 7d→35h · 14d→65h · 28d→100h · 365d→1000h</div>
-    </div>
-  </div>
-
-  <!-- Settings -->
-  <div style="padding:14px 18px 0;margin-top:8px">
-    <div style="font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:12px">⚙️ Settings</div>
-
-    <!-- Leave types -->
-    <div class="pcard" style="margin-bottom:12px">
-      <div class="pchead" style="font-size:11px">🌴 Leave Types & Earliest Reporting</div>
-      <div class="gs-body" style="margin-bottom:10px">Earliest report time for duty the next day after each leave type.</div>
+    <!-- SUB: Settings (Leave types) -->
+    <div id="drawer-page-settings" style="display:none;padding:14px">
+      <div class="gs-body" style="margin-bottom:12px">Earliest report time for duty the next day after each leave type. Check to count toward weekly rest.</div>
       <div id="leave-config-table"></div>
-      <button class="btn btn-cyan" style="width:100%;margin-top:10px" onclick="saveLeaveConfigFromGuide()">💾 Save</button>
-      <button class="btn btn-ghost" style="width:100%;margin-top:6px" onclick="resetLeaveConfig()">↺ Defaults</button>
+      <button class="btn btn-cyan" style="width:100%;margin-top:12px" onclick="saveLeaveConfigFromGuide()">💾 Save changes</button>
+      <button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="resetLeaveConfig()">↺ Reset to defaults</button>
     </div>
 
-    <!-- Allowance rates -->
-    <div class="pcard" style="margin-bottom:12px">
-      <div class="pchead" style="font-size:11px">💰 Allowance Rates</div>
-      <div class="gs-body" style="margin-bottom:10px">Rates per rank — feed into the Allowance Calculator.</div>
+    <!-- SUB: Allowance Rates -->
+    <div id="drawer-page-allow-rates" style="display:none;padding:14px">
+      <div class="gs-body" style="margin-bottom:12px">Edit rates per rank. Feed into the Allowance Calculator.</div>
       <div id="allow-rates-config-table"></div>
-      <button class="btn btn-cyan" style="width:100%;margin-top:10px" onclick="saveAllowRatesFromGuide()">💾 Save</button>
-      <button class="btn btn-ghost" style="width:100%;margin-top:6px" onclick="resetAllowRates()">↺ Defaults</button>
+      <button class="btn btn-cyan" style="width:100%;margin-top:12px" onclick="saveAllowRatesFromGuide()">💾 Save changes</button>
+      <button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="resetAllowRates()">↺ Reset to defaults</button>
     </div>
 
-    <!-- International destinations -->
-    <div class="pcard" style="margin-bottom:12px">
-      <div class="pchead" style="font-size:11px">🌍 International Destinations</div>
-      <div class="gs-body" style="margin-bottom:10px">Excluded from domestic layover calc — paid separately via payroll.</div>
+    <!-- SUB: International Destinations -->
+    <div id="drawer-page-intl-dest" style="display:none;padding:14px">
+      <div class="gs-body" style="margin-bottom:10px">Layovers here are excluded from domestic allowance — paid separately via payroll.</div>
       <div style="display:flex;gap:6px;margin-bottom:8px">
         <input type="text" id="intl-add-code" placeholder="IATA" maxlength="4"
           style="flex:1;background:var(--panel3);border:1px solid var(--edge2);border-radius:7px;
                  color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 10px;text-transform:uppercase">
-        <input type="text" id="intl-add-name" placeholder="Name"
+        <input type="text" id="intl-add-name" placeholder="Destination name"
           style="flex:2;background:var(--panel3);border:1px solid var(--edge2);border-radius:7px;
                  color:var(--text);font-size:12px;padding:7px 10px">
       </div>
-      <button class="btn btn-cyan" style="width:100%;margin-bottom:10px" onclick="addIntlDestination()">+ Add</button>
-      <div id="intl-config-table" style="max-height:260px;overflow-y:auto"></div>
+      <button class="btn btn-cyan" style="width:100%;margin-bottom:10px" onclick="addIntlDestination()">+ Add Destination</button>
+      <div id="intl-config-table" style="max-height:340px;overflow-y:auto"></div>
       <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="resetIntlDestinations()">↺ Reset to defaults</button>
     </div>
 
-    <!-- Domestic destinations reference -->
-    <div class="pcard">
-      <div class="pchead" style="font-size:11px">🇮🇳 Domestic Destinations</div>
-      <div class="gs-body" style="margin-bottom:10px">Reference list for route validation — auto-recognised when you type a route.</div>
-      <div id="domestic-dest-table" style="max-height:260px;overflow-y:auto"></div>
+    <!-- SUB: Domestic Destinations -->
+    <div id="drawer-page-dom-dest" style="display:none;padding:14px">
+      <div class="gs-body" style="margin-bottom:10px">Auto-recognised when you type a route. Built-in — cannot be removed individually.</div>
+      <div id="domestic-dest-table" style="max-height:420px;overflow-y:auto"></div>
     </div>
-  </div>
 
+  </div><!-- end scrollable -->
 </div><!-- end drawer -->
 
 </div><!-- app -->
@@ -1442,27 +1468,76 @@ function nbTap(e, name, btn) {
 }
 
 // ── Side Drawer ──
+var _drawerPage = 'home';
+
+var _drawerPageTitles = {
+  home: 'Menu',
+  guide: '📖 Guide',
+  fdtl: '📋 FDTL Rules',
+  settings: '⚙️ Settings',
+  'allow-rates': '💰 Allowance Rates',
+  'intl-dest': '🌍 International Destinations',
+  'dom-dest': '🇮🇳 Domestic Destinations',
+};
+
 function openDrawer() {
+  _drawerPage = 'home';
   document.getElementById('drawer').classList.add('open');
   document.getElementById('drawer-overlay').classList.add('open');
-  renderLeaveConfigTable();
-  renderAllowRatesConfigTable();
-  renderIntlConfigTable();
-  // Render domestic destinations reference table
-  const domEl = document.getElementById('domestic-dest-table');
-  if (domEl && !domEl.innerHTML) {
-    domEl.innerHTML = DOMESTIC_DESTINATIONS.map(s =>
-      `<div style="display:flex;justify-content:space-between;padding:5px 8px;
-        font-size:10px;border-bottom:1px solid var(--edge2)">
-        <span style="color:var(--muted)">${s.name}</span>
-        <strong style="color:var(--text);font-family:var(--mono)">${s.code}</strong>
-      </div>`).join('');
-  }
+  showDrawerPage('home');
 }
 
 function closeDrawer() {
   document.getElementById('drawer').classList.remove('open');
   document.getElementById('drawer-overlay').classList.remove('open');
+}
+
+function openDrawerPage(page) {
+  _drawerPage = page;
+  showDrawerPage(page);
+}
+
+function drawerBack() {
+  _drawerPage = 'home';
+  showDrawerPage('home');
+}
+
+function showDrawerPage(page) {
+  // Show/hide pages
+  var home = document.getElementById('drawer-home');
+  var pages = ['guide','fdtl','settings','allow-rates','intl-dest','dom-dest'];
+
+  if (home) home.style.display = page === 'home' ? '' : 'none';
+  pages.forEach(function(p) {
+    var el = document.getElementById('drawer-page-' + p);
+    if (el) el.style.display = (p === page) ? '' : 'none';
+  });
+
+  // Update title and back button
+  var titleEl = document.getElementById('drawer-title');
+  var backBtn = document.getElementById('drawer-back-btn');
+  if (titleEl) titleEl.textContent = _drawerPageTitles[page] || 'Menu';
+  if (backBtn) backBtn.style.display = page === 'home' ? 'none' : '';
+
+  // Render config tables when their page opens
+  if (page === 'settings') renderLeaveConfigTable();
+  if (page === 'allow-rates') renderAllowRatesConfigTable();
+  if (page === 'intl-dest') renderIntlConfigTable();
+  if (page === 'dom-dest') {
+    var domEl = document.getElementById('domestic-dest-table');
+    if (domEl && !domEl.innerHTML) {
+      domEl.innerHTML = DOMESTIC_DESTINATIONS.map(function(s) {
+        return '<div style="display:flex;justify-content:space-between;padding:6px 8px;' +
+          'font-size:11px;border-bottom:1px solid var(--edge2)">' +
+          '<span style="color:var(--muted)">' + s.name + '</span>' +
+          '<strong style="color:var(--text);font-family:var(--mono)">' + s.code + '</strong></div>';
+      }).join('');
+    }
+  }
+
+  // Scroll drawer to top on page change
+  var scroller = document.querySelector('#drawer > div:last-child');
+  if (scroller) scroller.scrollTop = 0;
 }
 
 // ── Navigation ──
