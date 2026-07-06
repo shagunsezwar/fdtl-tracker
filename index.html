@@ -1174,8 +1174,17 @@ Debriefing time: 2300"></textarea>
 
     <!-- SUB: Domestic Destinations -->
     <div id="drawer-page-dom-dest" style="display:none;padding:14px">
-      <div class="gs-body" style="margin-bottom:10px">Auto-recognised when you type a route. Built-in — cannot be removed individually.</div>
-      <div id="domestic-dest-table" style="max-height:420px;overflow-y:auto"></div>
+      <div class="gs-body" style="margin-bottom:10px">Auto-recognised when you type a route. Custom additions shown in amber.</div>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <input type="text" id="dom-add-code" placeholder="IATA" maxlength="4"
+          style="flex:1;background:var(--panel3);border:1px solid var(--edge2);border-radius:7px;
+                 color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 10px;text-transform:uppercase">
+        <input type="text" id="dom-add-name" placeholder="Destination name"
+          style="flex:2;background:var(--panel3);border:1px solid var(--edge2);border-radius:7px;
+                 color:var(--text);font-size:12px;padding:7px 10px">
+      </div>
+      <button class="btn btn-cyan" style="width:100%;margin-bottom:12px" onclick="addDomesticDest()">+ Add Destination</button>
+      <div id="domestic-dest-table" style="max-height:380px;overflow-y:auto"></div>
     </div>
 
   </div><!-- end scrollable -->
@@ -1504,17 +1513,65 @@ function drawerBack() {
 }
 
 function showDrawerPage(page) {
-  // Show/hide pages
   var home = document.getElementById('drawer-home');
   var pages = ['guide','fdtl','settings','allow-rates','intl-dest','dom-dest'];
+  var scroller = document.querySelector('#drawer > div:last-child');
 
-  if (home) home.style.display = page === 'home' ? '' : 'none';
-  pages.forEach(function(p) {
-    var el = document.getElementById('drawer-page-' + p);
-    if (el) el.style.display = (p === page) ? '' : 'none';
-  });
+  // Determine slide direction: going into a sub-page slides left, going back slides right
+  var goingIn = page !== 'home';
+  var fromEl = page === 'home'
+    ? document.querySelector('[id^="drawer-page-"]:not([style*="display:none"])')
+    : (home && home.style.display !== 'none' ? home : document.querySelector('[id^="drawer-page-"]:not([style*="display:none"])'));
 
-  // Update title and back button
+  // Show target immediately (off-screen via transform)
+  var toId = page === 'home' ? 'drawer-home' : 'drawer-page-' + page;
+  var toEl = document.getElementById(toId);
+  if (!toEl) return;
+
+  // Set up positions
+  if (fromEl && fromEl !== toEl) {
+    fromEl.style.transition = 'none';
+    toEl.style.transition = 'none';
+    toEl.style.display = '';
+    toEl.style.position = 'absolute';
+    toEl.style.top = '0'; toEl.style.left = '0'; toEl.style.right = '0';
+    toEl.style.transform = goingIn ? 'translateX(100%)' : 'translateX(-100%)';
+
+    // Force reflow
+    toEl.getBoundingClientRect();
+
+    // Animate
+    var dur = '260ms';
+    fromEl.style.transition = 'transform ' + dur + ' ease';
+    toEl.style.transition   = 'transform ' + dur + ' ease';
+    fromEl.style.transform  = goingIn ? 'translateX(-40%)' : 'translateX(100%)';
+    toEl.style.transform    = 'translateX(0)';
+
+    setTimeout(function() {
+      // Hide all others
+      if (home) home.style.display = 'none';
+      pages.forEach(function(p) {
+        var el = document.getElementById('drawer-page-' + p);
+        if (el) { el.style.display = 'none'; el.style.position = ''; el.style.transform = ''; el.style.transition = ''; }
+      });
+      // Show target cleanly
+      toEl.style.display = '';
+      toEl.style.position = '';
+      toEl.style.transform = '';
+      toEl.style.transition = '';
+      if (page === 'home' && home) { home.style.display = ''; }
+      if (scroller) scroller.scrollTop = 0;
+    }, 270);
+  } else {
+    // First open — no animation
+    if (home) home.style.display = page === 'home' ? '' : 'none';
+    pages.forEach(function(p) {
+      var el = document.getElementById('drawer-page-' + p);
+      if (el) el.style.display = (p === page) ? '' : 'none';
+    });
+  }
+
+  // Update title and back button immediately
   var titleEl = document.getElementById('drawer-title');
   var backBtn = document.getElementById('drawer-back-btn');
   if (titleEl) titleEl.textContent = _drawerPageTitles[page] || 'Menu';
@@ -1524,21 +1581,7 @@ function showDrawerPage(page) {
   if (page === 'settings') renderLeaveConfigTable();
   if (page === 'allow-rates') renderAllowRatesConfigTable();
   if (page === 'intl-dest') renderIntlConfigTable();
-  if (page === 'dom-dest') {
-    var domEl = document.getElementById('domestic-dest-table');
-    if (domEl && !domEl.innerHTML) {
-      domEl.innerHTML = DOMESTIC_DESTINATIONS.map(function(s) {
-        return '<div style="display:flex;justify-content:space-between;padding:6px 8px;' +
-          'font-size:11px;border-bottom:1px solid var(--edge2)">' +
-          '<span style="color:var(--muted)">' + s.name + '</span>' +
-          '<strong style="color:var(--text);font-family:var(--mono)">' + s.code + '</strong></div>';
-      }).join('');
-    }
-  }
-
-  // Scroll drawer to top on page change
-  var scroller = document.querySelector('#drawer > div:last-child');
-  if (scroller) scroller.scrollTop = 0;
+  if (page === 'dom-dest') renderDomesticDestTable();
 }
 
 // ── Navigation ──
@@ -3625,7 +3668,9 @@ const DOMESTIC_DESTINATIONS = [
 
 function isDomesticStation(code) {
   if (!code) return false;
-  return DOMESTIC_DESTINATIONS.some(s => s.code === code.toUpperCase());
+  const uc = code.toUpperCase();
+  if (DOMESTIC_DESTINATIONS.some(s => s.code === uc)) return true;
+  return getCustomDomesticDests().some(s => s.code === uc);
 }
 
 function getStationName(code) {
@@ -3633,6 +3678,8 @@ function getStationName(code) {
   const uc = code.toUpperCase();
   const dom = DOMESTIC_DESTINATIONS.find(s => s.code === uc);
   if (dom) return dom.name;
+  const custom = getCustomDomesticDests().find(s => s.code === uc);
+  if (custom) return custom.name;
   const intl = getIntlDestinations().find(s => s.code === uc);
   if (intl) return intl.name;
   return '';
@@ -3707,10 +3754,62 @@ function renderIntlConfigTable() {
   if (!el) return;
   const list = getIntlDestinations();
   el.innerHTML = list.map(s => `
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;
+    <div style="display:flex;align-items:center;gap:8px;
       padding:7px 10px;background:var(--panel2);border-radius:7px;margin-bottom:4px">
-      <span style="font-size:11px;color:var(--text)"><strong style="color:var(--cyan)">${s.code}</strong> · ${s.name}</span>
-      <button onclick="removeIntlDestination('${s.code}')" style="background:none;border:none;color:var(--red);font-size:14px;cursor:pointer">🗑</button>
+      <strong style="color:var(--cyan);font-family:var(--mono);font-size:11px">${s.code}</strong>
+      <span style="font-size:11px;color:var(--text)">${s.name}</span>
+    </div>`).join('');
+}
+
+// ── Custom domestic destinations (user additions) ──
+function getCustomDomesticDests() {
+  try { return JSON.parse(localStorage.getItem('custom_dom_dests') || '[]'); }
+  catch(e) { return []; }
+}
+function saveCustomDomesticDests(list) {
+  localStorage.setItem('custom_dom_dests', JSON.stringify(list));
+}
+
+function addDomesticDest() {
+  const codeEl = document.getElementById('dom-add-code');
+  const nameEl = document.getElementById('dom-add-name');
+  if (!codeEl || !nameEl) return;
+  const code = codeEl.value.trim().toUpperCase();
+  const name = nameEl.value.trim();
+  if (!code || code.length < 3) { alert('Please enter a valid 3-letter IATA code.'); return; }
+  if (!name) { alert('Please enter a destination name.'); return; }
+  const custom = getCustomDomesticDests();
+  if (DOMESTIC_DESTINATIONS.some(s => s.code === code) || custom.some(s => s.code === code)) {
+    alert(`${code} is already in the domestic list.`); return;
+  }
+  custom.push({ code, name });
+  custom.sort((a,b) => a.name.localeCompare(b.name));
+  saveCustomDomesticDests(custom);
+  codeEl.value = ''; nameEl.value = '';
+  renderDomesticDestTable();
+}
+
+function removeCustomDomDest(code) {
+  let custom = getCustomDomesticDests();
+  custom = custom.filter(s => s.code !== code);
+  saveCustomDomesticDests(custom);
+  renderDomesticDestTable();
+}
+
+function renderDomesticDestTable() {
+  const el = document.getElementById('domestic-dest-table');
+  if (!el) return;
+  const custom = getCustomDomesticDests();
+  const combined = [...DOMESTIC_DESTINATIONS, ...custom.map(s => ({...s, isCustom:true}))];
+  combined.sort((a,b) => a.name.localeCompare(b.name));
+  el.innerHTML = combined.map(s => `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;
+      padding:6px 8px;border-bottom:1px solid var(--edge2)">
+      <div style="display:flex;align-items:center;gap:8px">
+        <strong style="color:${s.isCustom?'var(--amber)':'var(--text)'};font-family:var(--mono);font-size:11px">${s.code}</strong>
+        <span style="font-size:11px;color:var(--muted)">${s.name}${s.isCustom?' <span style="font-size:9px;color:var(--amber)">(custom)</span>':''}</span>
+      </div>
+      ${s.isCustom ? `<button onclick="removeCustomDomDest('${s.code}')" style="background:none;border:none;color:var(--red);font-size:13px;cursor:pointer;flex-shrink:0">🗑</button>` : ''}
     </div>`).join('');
 }
 
