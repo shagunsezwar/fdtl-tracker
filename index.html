@@ -837,6 +837,7 @@ Debriefing time: 2300"></textarea>
           <option value="PL">Privileged Leave (PL)</option>
           <option value="CL">Casual Leave (CL)</option>
           <option value="PCL">Planned Casual Leave (PCL)</option>
+          <option value="ROFF">Requested Off (ROFF)</option>
         </select>
       </div>
 
@@ -3447,11 +3448,12 @@ function stripTerminal(code) {
 // LEAVE DEFINITIONS — earliest report times (editable in Guide)
 // ══════════════════════════════════════════════════════════
 const LEAVE_DEFAULTS = {
-  OFG: { name:'Golden Day Off',       code:'OFG', earliestHHMM:'00:01', color:'#4a9eff', countsAsWeeklyRest:true  },
-  SL:  { name:'Sick Leave',           code:'SL',  earliestHHMM:'06:00', color:'#ff6b6b', countsAsWeeklyRest:false },
-  PL:  { name:'Privileged Leave',     code:'PL',  earliestHHMM:'00:01', color:'#9b59b6', countsAsWeeklyRest:false },
-  CL:  { name:'Casual Leave',         code:'CL',  earliestHHMM:'10:00', color:'#ffd93d', countsAsWeeklyRest:true  },
-  PCL: { name:'Planned Casual Leave', code:'PCL', earliestHHMM:'10:00', color:'#6bcb77', countsAsWeeklyRest:true  },
+  OFG:  { name:'Golden Day Off',        code:'OFG',  earliestHHMM:'00:01', color:'#4a9eff', countsAsWeeklyRest:true  },
+  SL:   { name:'Sick Leave',            code:'SL',   earliestHHMM:'06:00', color:'#ff6b6b', countsAsWeeklyRest:false },
+  PL:   { name:'Privileged Leave',      code:'PL',   earliestHHMM:'00:01', color:'#9b59b6', countsAsWeeklyRest:true  },
+  CL:   { name:'Casual Leave',          code:'CL',   earliestHHMM:'10:00', color:'#ffd93d', countsAsWeeklyRest:true  },
+  PCL:  { name:'Planned Casual Leave',  code:'PCL',  earliestHHMM:'10:00', color:'#6bcb77', countsAsWeeklyRest:true  },
+  ROFF: { name:'Requested Off',         code:'ROFF', earliestHHMM:'00:01', color:'#e67e22', countsAsWeeklyRest:false },
 };
 
 function getLeaveConfig() {
@@ -3520,24 +3522,13 @@ function logLeave() {
   duties.sort((a,b) => a.date.localeCompare(b.date));
   persist(duties); renderDutiesFull(); renderDash();
 
-  const resEl = document.getElementById('log-result');
-  if (resEl) {
-    resEl.innerHTML = `<div style="
-      background:var(--green-dim);
-      border:1px solid rgba(0,230,118,.35);
-      border-radius:10px;padding:12px 14px;margin-top:12px;
-      display:flex;align-items:center;gap:10px;
-      animation:fadeUp .2s ease">
-      <span style="font-size:20px">✅</span>
-      <div>
-        <div style="font-family:var(--sans);font-weight:700;font-size:13px">Leave logged — ${lv.name}</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px">
-          ${fmtDate(date)} · Earliest report <strong style="color:var(--cyan)">${lv.earliestHHMM}</strong> on ${fmtDate(nextDate)}
-        </div>
-      </div>
-    </div>`;
-    setTimeout(() => { if(resEl) resEl.innerHTML=''; }, 5000);
-  }
+  setTimeout(function() {
+    var resEl = document.getElementById('log-result');
+    if (resEl) {
+      resEl.innerHTML = '<div style="background:var(--green-dim);border:1px solid rgba(0,230,118,.35);border-radius:10px;padding:12px 14px;margin-top:12px;display:flex;align-items:center;gap:10px;animation:fadeUp .2s ease"><span style="font-size:20px">✅</span><div><div style="font-family:var(--sans);font-weight:700;font-size:13px">Leave logged — ' + lv.name + '</div><div style="font-size:11px;color:var(--muted);margin-top:2px">' + fmtDate(date) + ' · Earliest report <strong style=\"color:var(--cyan)\">' + lv.earliestHHMM + '</strong> on ' + fmtDate(nextDate) + '</div></div></div>';
+      setTimeout(function() { var el=document.getElementById('log-result'); if(el) el.innerHTML=''; }, 5000);
+    }
+  }, 80);
   document.getElementById('leave-date').value = '';
 }
 
@@ -3545,35 +3536,41 @@ function renderLeaveConfigTable() {
   const cfg = getLeaveConfig();
   const el = document.getElementById('leave-config-table');
   if (!el) return;
-  el.innerHTML = Object.values(cfg).map(lv => `
-    <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;
-      background:var(--panel2);border-radius:8px;margin-bottom:6px;
-      border-left:3px solid ${lv.color}">
-      <div style="flex:1">
-        <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:4px">${lv.name} (${lv.code})</div>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span style="font-size:10px;color:var(--muted)">Earliest report:</span>
-          <input type="time" id="leave-time-${lv.code}" value="${lv.earliestHHMM}"
-            style="width:85px;background:var(--panel3);border:1px solid var(--edge2);
-                   border-radius:6px;color:var(--text);font-family:var(--mono);
-                   font-size:12px;padding:4px 6px">
-          <label style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--muted);cursor:pointer">
-            <input type="checkbox" id="leave-wr-${lv.code}" ${lv.countsAsWeeklyRest?'checked':''}
-              style="width:15px;height:15px;cursor:pointer;accent-color:var(--cyan)">
-            Count as weekly rest
-          </label>
-        </div>
-      </div>
-    </div>`).join('');
+  el.innerHTML = Object.values(cfg).map(lv => {
+    const on = lv.countsAsWeeklyRest;
+    return '<div style="background:var(--panel2);border-radius:8px;margin-bottom:8px;border-left:3px solid ' + lv.color + ';padding:10px 12px">' +
+      '<div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:8px">' + lv.name + ' (' + lv.code + ')</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
+        '<span style="font-size:10px;color:var(--muted);flex-shrink:0">Earliest report:</span>' +
+        '<input type="time" id="leave-time-' + lv.code + '" value="' + lv.earliestHHMM + '" style="flex:1;background:var(--panel3);border:1px solid var(--edge2);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:6px 8px">' +
+      '</div>' +
+      '<div onclick="toggleLeaveWR(\'' + lv.code + '\')" style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--panel3);border-radius:7px;cursor:pointer;border:1px solid var(--edge2);touch-action:manipulation;-webkit-tap-highlight-color:transparent">' +
+        '<div id="leave-wr-box-' + lv.code + '" style="width:22px;height:22px;border-radius:4px;flex-shrink:0;border:2px solid ' + (on ? 'var(--cyan)' : 'var(--edge2)') + ';background:' + (on ? 'var(--cyan)' : 'transparent') + ';display:flex;align-items:center;justify-content:center">' + (on ? '<span style="color:#000;font-size:13px;font-weight:700">✓</span>' : '') + '</div>' +
+        '<span style="font-size:11px;color:var(--muted)">Count as weekly rest</span>' +
+        '<input type="hidden" id="leave-wr-' + lv.code + '" value="' + (on ? '1' : '0') + '">' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function toggleLeaveWR(code) {
+  var hiddenEl = document.getElementById('leave-wr-' + code);
+  var boxEl    = document.getElementById('leave-wr-box-' + code);
+  if (!hiddenEl || !boxEl) return;
+  var newOn = hiddenEl.value !== '1';
+  hiddenEl.value = newOn ? '1' : '0';
+  boxEl.style.border = '2px solid ' + (newOn ? 'var(--cyan)' : 'var(--edge2)');
+  boxEl.style.background = newOn ? 'var(--cyan)' : 'transparent';
+  boxEl.innerHTML = newOn ? '<span style="color:#000;font-size:13px;font-weight:700">✓</span>' : '';
 }
 
 function saveLeaveConfigFromGuide() {
   const cfg = getLeaveConfig();
   for (const code in cfg) {
-    const timeEl = document.getElementById(`leave-time-${code}`);
-    const wrEl   = document.getElementById(`leave-wr-${code}`);
+    const timeEl = document.getElementById('leave-time-' + code);
+    const wrEl   = document.getElementById('leave-wr-' + code);
     if (timeEl && timeEl.value) cfg[code].earliestHHMM = timeEl.value;
-    if (wrEl) cfg[code].countsAsWeeklyRest = wrEl.checked;
+    if (wrEl) cfg[code].countsAsWeeklyRest = wrEl.value === '1';
   }
   saveLeaveConfig(cfg);
   alert('✓ Leave settings saved!');
@@ -5029,6 +5026,7 @@ Save anyway?`
   }
 
   ['l-route','l-report','l-debrief','l-block','l-land','l-pax'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
+  var fbEl=document.getElementById('route-validate-feedback'); if(fbEl) fbEl.innerHTML='';;
   logDtypeChange(); // restore field visibility
   // Reset night status box
   document.getElementById('night-status-icon').textContent='—';
