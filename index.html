@@ -838,6 +838,7 @@ Debriefing time: 2300"></textarea>
           <option value="CL">Casual Leave (CL)</option>
           <option value="PCL">Planned Casual Leave (PCL)</option>
           <option value="ROFF">Requested Off (ROFF)</option>
+          <option value="OFB">Blue Points Off (OFB)</option>
         </select>
       </div>
 
@@ -2412,8 +2413,9 @@ function recalcFDP() {
   const fdpCard = document.getElementById('fdp-limits-card');
   const {reportStr: rptStr, duty: activeDuty} = getActiveDutyReportStr();
 
-  // Hide FDP limits table entirely when no duties logged or no active/upcoming duty
-  if (!duties.length || !rptStr) {
+  // Hide FDP limits for standby (unless converted to a flight) or when no duty
+  const isStandbyOnly = activeDuty && activeDuty.dtype && activeDuty.dtype.startsWith('standby') && !activeDuty.convertedFlight;
+  if (!duties.length || !rptStr || isStandbyOnly) {
     if (fdpCard) fdpCard.style.display = 'none';
     if (tag) { tag.textContent = 'Day duty'; tag.className = 'pctag'; }
     return;
@@ -3453,7 +3455,8 @@ const LEAVE_DEFAULTS = {
   PL:   { name:'Privileged Leave',      code:'PL',   earliestHHMM:'00:01', color:'#9b59b6', countsAsWeeklyRest:true  },
   CL:   { name:'Casual Leave',          code:'CL',   earliestHHMM:'10:00', color:'#ffd93d', countsAsWeeklyRest:true  },
   PCL:  { name:'Planned Casual Leave',  code:'PCL',  earliestHHMM:'10:00', color:'#6bcb77', countsAsWeeklyRest:true  },
-  ROFF: { name:'Requested Off',         code:'ROFF', earliestHHMM:'00:01', color:'#e67e22', countsAsWeeklyRest:false },
+  ROFF: { name:'Requested Off',         code:'ROFF', earliestHHMM:'00:01', color:'#e67e22', countsAsWeeklyRest:true  },
+  OFB:  { name:'Blue Points Off',        code:'OFB',  earliestHHMM:'00:01', color:'#1abc9c', countsAsWeeklyRest:true  },
 };
 
 function getLeaveConfig() {
@@ -5688,7 +5691,7 @@ function buildBoardLive(d, now, timeStr) {
       Report: <strong>${d.report}</strong> &nbsp;·&nbsp; Debrief: <strong>${d.debrief}</strong>
     </div>
     <div class="board-info" style="font-size:12px">
-      🚗 Cab at: <strong>${cabTime}</strong> &nbsp;·&nbsp; 🏠 Home by: <strong>${homeTime}</strong>
+      🚗 Cab at: <strong>${cabTime}</strong> &nbsp;·&nbsp; ${isLayover ? '🏨 Hotel by:' : '🏠 Home by:'} <strong>${homeTime}</strong>
     </div>
 
     <div class="board-countdown">${fmtCountdown(msToDebrief)} to debrief</div>
@@ -5738,7 +5741,7 @@ function buildBoardNext(d, now, timeStr) {
     </div>
     <div class="board-info" style="font-size:12px">
       🚗 Cab at: <strong style="color:var(--amber)">${cabTime}</strong>
-      &nbsp;·&nbsp; 🏠 Home by: <strong>${homeTime}</strong>
+      &nbsp;·&nbsp; ${isLayover ? '🏨 Hotel by:' : '🏠 Home by:'} <strong>${homeTime}</strong>
     </div>
 
     <div class="board-countdown" style="color:var(--amber)">
