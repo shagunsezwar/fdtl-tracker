@@ -5322,7 +5322,7 @@ function openStandbyConvertModal(id) {
       <div class="frow" style="margin-bottom:12px">
         <div class="fg" style="margin:0">
           <label class="fl">Route</label>
-          <input type="text" id="sbc-route" placeholder="BLR-DEL"
+          <input type="text" id="sbc-route" placeholder="BLR-DEL" oninput="this.value=this.value.toUpperCase().replace(/\s+/g,'-')"
             oninput="this.value=this.value.toUpperCase(); sbcAutoLand()"
             style="text-transform:uppercase;letter-spacing:1px">
         </div>
@@ -5629,8 +5629,10 @@ function renderFlightBoard() {
 
   let currentDuty = null, nextDuty = null;
   for (const d of sorted) {
-    const repDT = getReportDT(d);
-    const debDT = getDebriefDT(d);
+    // For converted standbys, use the flight's report/debrief for board timing
+    const cf = d.convertedFlight;
+    const repDT = cf ? istDT(d.date, cf.report) : getReportDT(d);
+    const debDT = cf ? istDT(cf.debriefDate || d.date, cf.debrief) : getDebriefDT(d);
     if (!repDT || !debDT) continue;
     if (repDT <= now && now <= debDT) { currentDuty = d; break; }
     if (repDT > now && !nextDuty) nextDuty = d;
@@ -5651,25 +5653,36 @@ function renderFlightBoard() {
 }
 
 function buildBoardLive(d, now, timeStr) {
-  const repDT  = getReportDT(d);
-  const debDT  = getDebriefDT(d);
+  // If standby converted to flight, use the flight's times/route for board display
+  const cf = d.convertedFlight;
+  const displayD = cf ? {
+    date: d.date,
+    report: cf.report || d.report,
+    debrief: cf.debrief || d.debrief,
+    debriefDate: cf.debriefDate || d.debriefDate,
+    route: cf.route || d.route,
+    dtype: 'flight'
+  } : d;
+
+  const repDT  = cf ? istDT(displayD.date, displayD.report) : getReportDT(d);
+  const debDT  = cf ? istDT(displayD.debriefDate || displayD.date, displayD.debrief) : getDebriefDT(d);
   const total  = debDT - repDT;
   const elapsed = now - repDT;
   const pct    = Math.min(96, Math.max(4, (elapsed / total) * 100)).toFixed(1);
 
-  const route  = d.route || '—';
+  const route  = displayD.route || '—';
   const parts  = route.split('-');
   const origin = parts[0] || '';
   const dest   = parts[parts.length-1] || '';
   const isLayover = dest !== 'BLR' && dest !== '';
 
   const msToDebrief = debDT - now;
-  const homeTime    = addMinsToIST(d.debrief, 60);  // home = debrief + 1h
-  const cabTime     = addMinsToIST(d.report, -60);   // cab  = report - 1h
+  const homeTime    = addMinsToIST(displayD.debrief, 60);
+  const cabTime     = addMinsToIST(displayD.report, -60);
 
   return `
     <div class="board-pill" style="background:rgba(0,230,118,.15);color:var(--green);border:1px solid rgba(0,230,118,.4)">
-      ✈ DUTY LIVE · ${fmtDate(d.date)}
+      ✈ DUTY LIVE · ${fmtDate(d.date)}${cf ? ' · SB→Flight' : ''}
     </div>
 
     <div class="board-route">${route}</div>
@@ -5688,7 +5701,7 @@ function buildBoardLive(d, now, timeStr) {
     ${isLayover ? `<div class="board-layover">🏨 LAYOVER · ${dest}</div>` : ''}
 
     <div class="board-info">
-      Report: <strong>${d.report}</strong> &nbsp;·&nbsp; Debrief: <strong>${d.debrief}</strong>
+      Report: <strong>${displayD.report}</strong> &nbsp;·&nbsp; Debrief: <strong>${displayD.debrief}</strong>
     </div>
     <div class="board-info" style="font-size:12px">
       🚗 Cab at: <strong>${cabTime}</strong> &nbsp;·&nbsp; ${isLayover ? '🏨 Hotel by:' : '🏠 Home by:'} <strong>${homeTime}</strong>
