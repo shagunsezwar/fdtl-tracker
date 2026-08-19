@@ -730,6 +730,7 @@ Debriefing time: 2300"></textarea>
         <option value="flight">Flight duty</option>
         <option value="flight-deadhead">Flight duty + Deadhead</option>
         <option value="positioning">Deadhead only</option>
+        <option value="simulator">Simulator</option>
         <option value="standby-home">Standby — home/hotel</option>
         <option value="standby-apt">Standby — airport</option>
       </select>
@@ -2413,7 +2414,7 @@ function recalcFDP() {
   const fdpCard = document.getElementById('fdp-limits-card');
   const {reportStr: rptStr, duty: activeDuty} = getActiveDutyReportStr();
 
-  // Hide FDP limits for standby (unless converted to a flight) or when no duty
+  // Hide FDP limits for standby (unless converted to flight) or no duty
   const isStandbyOnly = activeDuty && activeDuty.dtype && activeDuty.dtype.startsWith('standby') && !activeDuty.convertedFlight;
   if (!duties.length || !rptStr || isStandbyOnly) {
     if (fdpCard) fdpCard.style.display = 'none';
@@ -3456,7 +3457,7 @@ const LEAVE_DEFAULTS = {
   CL:   { name:'Casual Leave',          code:'CL',   earliestHHMM:'10:00', color:'#ffd93d', countsAsWeeklyRest:true  },
   PCL:  { name:'Planned Casual Leave',  code:'PCL',  earliestHHMM:'10:00', color:'#6bcb77', countsAsWeeklyRest:true  },
   ROFF: { name:'Requested Off',         code:'ROFF', earliestHHMM:'00:01', color:'#e67e22', countsAsWeeklyRest:true  },
-  OFB:  { name:'Blue Points Off',        code:'OFB',  earliestHHMM:'00:01', color:'#1abc9c', countsAsWeeklyRest:true  },
+  OFB:  { name:'Blue Points Off',       code:'OFB',  earliestHHMM:'00:01', color:'#1abc9c', countsAsWeeklyRest:true  },
 };
 
 function getLeaveConfig() {
@@ -5322,9 +5323,10 @@ function openStandbyConvertModal(id) {
       <div class="frow" style="margin-bottom:12px">
         <div class="fg" style="margin:0">
           <label class="fl">Route</label>
-          <input type="text" id="sbc-route" placeholder="BLR-DEL" oninput="this.value=this.value.toUpperCase().replace(/\s+/g,'-')"
-            oninput="this.value=this.value.toUpperCase(); sbcAutoLand()"
+          <input type="text" id="sbc-route" placeholder="BLR-DEL"
+            oninput="this.value=this.value.toUpperCase().replace(/\s+/g,'-');sbcAutoLandings();sbcValidateRoute()"
             style="text-transform:uppercase;letter-spacing:1px">
+          <div id="sbc-route-feedback" style="margin-top:4px;font-size:10px;line-height:1.8;flex-wrap:wrap;display:flex"></div>
         </div>
         <div class="fg" style="margin:0">
           <label class="fl">Landings</label>
@@ -5426,12 +5428,35 @@ function closeSbModal() {
   if (m) m.remove();
 }
 
+function sbcAutoLandings() {
+  const route = document.getElementById('sbc-route');
+  const landEl = document.getElementById('sbc-land');
+  if (!route || !landEl) return;
+  const parts = route.value.split('-').filter(Boolean);
+  const sectors = parts.length - 1;
+  if (sectors >= 1 && sectors <= 6) landEl.value = sectors;
+}
+
+function sbcValidateRoute() {
+  const route = document.getElementById('sbc-route');
+  const fbEl  = document.getElementById('sbc-route-feedback');
+  if (!route || !fbEl) return;
+  const val = route.value.trim();
+  if (!val) { fbEl.innerHTML = ''; return; }
+  const results = validateRoute(val);
+  fbEl.innerHTML = results.map(r => {
+    if (r.valid) {
+      const tag = r.intl
+        ? '<span style="color:var(--cyan);font-size:9px">🌍 INTL</span>'
+        : '<span style="color:var(--green);font-size:9px">✓ DOM</span>';
+      return '<span style="margin-right:8px">' + r.code + ' ' + tag + ' <span style="color:var(--muted)">' + r.name + '</span></span>';
+    }
+    return '<span style="margin-right:8px;color:var(--red)">⚠ ' + r.code + ' — unknown</span>';
+  }).join('');
+}
+
 function sbcAutoLand() {
-  const route = document.getElementById('sbc-route').value.trim();
-  const dashes = (route.match(/-/g) || []).length;
-  if (dashes >= 1 && dashes <= 6) {
-    document.getElementById('sbc-land').value = dashes;
-  }
+  sbcAutoLandings();
 }
 
 function saveStandbyConvert(sbId) {
@@ -5629,10 +5654,8 @@ function renderFlightBoard() {
 
   let currentDuty = null, nextDuty = null;
   for (const d of sorted) {
-    // For converted standbys, use the flight's report/debrief for board timing
-    const cf = d.convertedFlight;
-    const repDT = cf ? istDT(d.date, cf.report) : getReportDT(d);
-    const debDT = cf ? istDT(cf.debriefDate || d.date, cf.debrief) : getDebriefDT(d);
+    const repDT = getReportDT(d);
+    const debDT = getDebriefDT(d);
     if (!repDT || !debDT) continue;
     if (repDT <= now && now <= debDT) { currentDuty = d; break; }
     if (repDT > now && !nextDuty) nextDuty = d;
@@ -5653,36 +5676,25 @@ function renderFlightBoard() {
 }
 
 function buildBoardLive(d, now, timeStr) {
-  // If standby converted to flight, use the flight's times/route for board display
-  const cf = d.convertedFlight;
-  const displayD = cf ? {
-    date: d.date,
-    report: cf.report || d.report,
-    debrief: cf.debrief || d.debrief,
-    debriefDate: cf.debriefDate || d.debriefDate,
-    route: cf.route || d.route,
-    dtype: 'flight'
-  } : d;
-
-  const repDT  = cf ? istDT(displayD.date, displayD.report) : getReportDT(d);
-  const debDT  = cf ? istDT(displayD.debriefDate || displayD.date, displayD.debrief) : getDebriefDT(d);
+  const repDT  = getReportDT(d);
+  const debDT  = getDebriefDT(d);
   const total  = debDT - repDT;
   const elapsed = now - repDT;
   const pct    = Math.min(96, Math.max(4, (elapsed / total) * 100)).toFixed(1);
 
-  const route  = displayD.route || '—';
+  const route  = d.route || '—';
   const parts  = route.split('-');
   const origin = parts[0] || '';
   const dest   = parts[parts.length-1] || '';
   const isLayover = dest !== 'BLR' && dest !== '';
 
   const msToDebrief = debDT - now;
-  const homeTime    = addMinsToIST(displayD.debrief, 60);
-  const cabTime     = addMinsToIST(displayD.report, -60);
+  const homeTime    = addMinsToIST(d.debrief, 60);  // home = debrief + 1h
+  const cabTime     = addMinsToIST(d.report, -60);   // cab  = report - 1h
 
   return `
     <div class="board-pill" style="background:rgba(0,230,118,.15);color:var(--green);border:1px solid rgba(0,230,118,.4)">
-      ✈ DUTY LIVE · ${fmtDate(d.date)}${cf ? ' · SB→Flight' : ''}
+      ✈ DUTY LIVE · ${fmtDate(d.date)}
     </div>
 
     <div class="board-route">${route}</div>
@@ -5701,7 +5713,7 @@ function buildBoardLive(d, now, timeStr) {
     ${isLayover ? `<div class="board-layover">🏨 LAYOVER · ${dest}</div>` : ''}
 
     <div class="board-info">
-      Report: <strong>${displayD.report}</strong> &nbsp;·&nbsp; Debrief: <strong>${displayD.debrief}</strong>
+      Report: <strong>${d.report}</strong> &nbsp;·&nbsp; Debrief: <strong>${d.debrief}</strong>
     </div>
     <div class="board-info" style="font-size:12px">
       🚗 Cab at: <strong>${cabTime}</strong> &nbsp;·&nbsp; ${isLayover ? '🏨 Hotel by:' : '🏠 Home by:'} <strong>${homeTime}</strong>
