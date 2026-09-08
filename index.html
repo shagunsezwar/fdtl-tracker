@@ -2349,6 +2349,25 @@ function buildLandingRow() {
     </div>`;
   });
 
+  // Max delay = FDP ends at - planned engine-off
+  var maxDelayStr = '';
+  var activeRowD = tableRows.find(function(r){ return r.isActive; });
+  if (activeRowD && activeDuty && activeDuty.engoff && !activeRowD.isIllegal) {
+    var engOff = activeDuty.actualDebrief ? addMins(activeDuty.actualDebrief, -15) : activeDuty.engoff;
+    var fdpEndsAt = activeRowD.expiryStr;
+    var eoParts = engOff.split(':').map(Number), fpParts = fdpEndsAt.split(':').map(Number);
+    var delayMins = (fpParts[0]*60+fpParts[1]) - (eoParts[0]*60+eoParts[1]);
+    if (delayMins < 0) delayMins += 1440;
+    if (delayMins > 0 && delayMins < 720) {
+      var dH = Math.floor(delayMins/60), dM = delayMins%60;
+      maxDelayStr = '<div style="margin-top:8px;padding:9px 12px;background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.3);border-radius:8px;display:flex;align-items:center;justify-content:space-between;font-family:var(--mono)">' +
+        '<div><div style="font-size:9px;color:var(--amber);letter-spacing:.5px;text-transform:uppercase;margin-bottom:2px">Max delay possible</div>' +
+        '<div style="font-size:10px;color:var(--muted)">FDP ends ' + fdpEndsAt + ' − Eng-off ' + engOff + '</div></div>' +
+        '<div style="font-size:20px;font-weight:700;color:var(--amber)">' + String(dH).padStart(2,'0') + 'h ' + String(dM).padStart(2,'0') + 'm</div>' +
+        '</div>';
+    }
+  }
+
   t += `</div>
   <button onclick="toggleFdpRows(this)"
     style="width:100%;margin-top:6px;padding:7px;background:var(--panel2);
@@ -2356,7 +2375,7 @@ function buildLandingRow() {
       font-size:11px;font-family:var(--mono);cursor:pointer;
       -webkit-tap-highlight-color:transparent;touch-action:manipulation">
     ▼ Show all landing rows
-  </button>`;
+  </button>` + maxDelayStr;
 
   // WOCL footnote — §2.3.25 WOCL = 0200–0600
   if (hasWocl && rptStr) {
@@ -4651,7 +4670,7 @@ function pushDuty(d) {
 // Show/hide flight-only fields based on duty type
 function logDtypeChange() {
   const dtype = document.getElementById('l-dtype').value;
-  const isStandby    = dtype.startsWith('standby');
+  const isStandby    = dtype.startsWith('standby') || dtype === 'simulator';
   const isDeadhead   = dtype === 'positioning';
   const isFlightDH   = dtype === 'flight-deadhead';
   const showPax      = isDeadhead || isFlightDH;
@@ -4664,7 +4683,7 @@ function logDtypeChange() {
 
   // Block hours + landings: hidden for deadhead-only
   const blockEl = document.getElementById('field-block-land');
-  if (blockEl) blockEl.style.display = isDeadhead ? 'none' : (isStandby ? 'none' : '');
+  if (blockEl) blockEl.style.display = (isDeadhead || isStandby) ? 'none' : '';
 
   // Pax hours: shown for deadhead-only AND flight+deadhead
   const paxEl = document.getElementById('field-pax');
