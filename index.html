@@ -679,10 +679,10 @@ Debriefing time: 2300"></textarea>
     <div class="frow" style="margin-bottom:10px">
       <div class="fg" style="margin:0">
         <label class="fl">Type</label>
-        <select id="allow-entry-type">
+        <select id="allow-entry-type" onchange="allowEntryTypeChange()">
           <option value="night">🌙 Night Allowance — manual correction (hrs)</option>
           <option value="tailswap">🔄 Tail-swap</option>
-          <option value="transit">⏱ Transit Halt (mins)</option>
+          <option value="transit">⏱ Transit Halt</option>
         </select>
       </div>
       <div class="fg" style="margin:0">
@@ -690,13 +690,46 @@ Debriefing time: 2300"></textarea>
         <input type="date" id="allow-entry-date">
       </div>
     </div>
-    <div class="frow" style="margin-bottom:10px">
-      <div class="fg" style="margin:0">
-        <label class="fl" id="allow-entry-val-label">Hours</label>
-        <input type="number" id="allow-entry-value" step="0.1" placeholder="e.g. 4">
+
+    <!-- Non-transit fields (night hrs) -->
+    <div id="allow-field-generic" style="margin-bottom:10px">
+      <div class="frow" style="margin-bottom:0">
+        <div class="fg" style="margin:0">
+          <label class="fl" id="allow-entry-val-label">Hours</label>
+          <input type="number" id="allow-entry-value" step="0.1" placeholder="e.g. 4">
+        </div>
+        <div class="fg" style="margin:0"></div>
       </div>
-      <div class="fg" style="margin:0"></div>
     </div>
+
+    <!-- Transit halt fields -->
+    <div id="allow-field-transit" style="display:none;margin-bottom:10px">
+      <div style="font-size:10px;color:var(--muted);margin-bottom:8px;line-height:1.6">
+        Enter scheduled and actual arrival/departure times. The ±15min rule will be applied automatically.
+      </div>
+      <div class="frow" style="margin-bottom:8px">
+        <div class="fg" style="margin:0">
+          <label class="fl">Sched. arrival</label>
+          <input type="time" id="transit-sched-arr" oninput="updateTransitPreview()" style="font-family:var(--mono);font-size:14px;color:var(--text)">
+        </div>
+        <div class="fg" style="margin:0">
+          <label class="fl">Sched. departure</label>
+          <input type="time" id="transit-sched-dep" oninput="updateTransitPreview()" style="font-family:var(--mono);font-size:14px;color:var(--text)">
+        </div>
+      </div>
+      <div class="frow" style="margin-bottom:8px">
+        <div class="fg" style="margin:0">
+          <label class="fl">Actual arrival</label>
+          <input type="time" id="transit-actual-arr" oninput="updateTransitPreview()" style="font-family:var(--mono);font-size:14px;color:var(--text)">
+        </div>
+        <div class="fg" style="margin:0">
+          <label class="fl">Actual departure</label>
+          <input type="time" id="transit-actual-dep" oninput="updateTransitPreview()" style="font-family:var(--mono);font-size:14px;color:var(--text)">
+        </div>
+      </div>
+      <div id="transit-preview" style="font-size:10px;color:var(--muted);min-height:16px"></div>
+    </div>
+
     <button class="btn btn-cyan" style="width:100%" onclick="logAllowanceEntry()">+ Add Entry</button>
   </div>
 
@@ -2349,25 +2382,6 @@ function buildLandingRow() {
     </div>`;
   });
 
-  // Max delay = FDP ends at - planned engine-off
-  var maxDelayStr = '';
-  var activeRowD = tableRows.find(function(r){ return r.isActive; });
-  if (activeRowD && activeDuty && activeDuty.engoff && !activeRowD.isIllegal) {
-    var engOff = activeDuty.actualDebrief ? addMins(activeDuty.actualDebrief, -15) : activeDuty.engoff;
-    var fdpEndsAt = activeRowD.expiryStr;
-    var eoParts = engOff.split(':').map(Number), fpParts = fdpEndsAt.split(':').map(Number);
-    var delayMins = (fpParts[0]*60+fpParts[1]) - (eoParts[0]*60+eoParts[1]);
-    if (delayMins < 0) delayMins += 1440;
-    if (delayMins > 0 && delayMins < 720) {
-      var dH = Math.floor(delayMins/60), dM = delayMins%60;
-      maxDelayStr = '<div style="margin-top:8px;padding:9px 12px;background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.3);border-radius:8px;display:flex;align-items:center;justify-content:space-between;font-family:var(--mono)">' +
-        '<div><div style="font-size:9px;color:var(--amber);letter-spacing:.5px;text-transform:uppercase;margin-bottom:2px">Max delay possible</div>' +
-        '<div style="font-size:10px;color:var(--muted)">FDP ends ' + fdpEndsAt + ' − Eng-off ' + engOff + '</div></div>' +
-        '<div style="font-size:20px;font-weight:700;color:var(--amber)">' + String(dH).padStart(2,'0') + 'h ' + String(dM).padStart(2,'0') + 'm</div>' +
-        '</div>';
-    }
-  }
-
   t += `</div>
   <button onclick="toggleFdpRows(this)"
     style="width:100%;margin-top:6px;padding:7px;background:var(--panel2);
@@ -2375,7 +2389,7 @@ function buildLandingRow() {
       font-size:11px;font-family:var(--mono);cursor:pointer;
       -webkit-tap-highlight-color:transparent;touch-action:manipulation">
     ▼ Show all landing rows
-  </button>` + maxDelayStr;
+  </button>`;
 
   // WOCL footnote — §2.3.25 WOCL = 0200–0600
   if (hasWocl && rptStr) {
@@ -3924,27 +3938,121 @@ function shiftAllowMonth(delta) {
   renderAllowance();
 }
 
+// ── Transit halt helpers ──
+// Convert HH:MM to minutes since midnight, handling overnight (dep < arr = next day)
+function hhmm2mins(s) {
+  if (!s) return null;
+  const [h,m] = s.split(':').map(Number);
+  return h*60 + m;
+}
+
+function calcHaltMins(arrHHMM, depHHMM) {
+  if (!arrHHMM || !depHHMM) return null;
+  const arr = hhmm2mins(arrHHMM);
+  const dep = hhmm2mins(depHHMM);
+  let diff = dep - arr;
+  if (diff <= 0) diff += 1440; // overnight
+  return diff;
+}
+
+// ±15min rule: if |sched - actual| ≤ 15min → use scheduled, else use actual
+// Returns { billableMins, rule, schedMins, actualMins }
+function applyTransitRule(schedArr, schedDep, actualArr, actualDep) {
+  const schedMins  = calcHaltMins(schedArr,  schedDep);
+  const actualMins = calcHaltMins(actualArr, actualDep);
+
+  if (schedMins === null || actualMins === null) return null;
+
+  const diff = Math.abs(schedMins - actualMins);
+  const useScheduled = diff <= 15;
+  const billableMins = useScheduled ? schedMins : actualMins;
+
+  return { schedMins, actualMins, diff, useScheduled, billableMins };
+}
+
+function allowEntryTypeChange() {
+  const type = document.getElementById('allow-entry-type').value;
+  const genericEl  = document.getElementById('allow-field-generic');
+  const transitEl  = document.getElementById('allow-field-transit');
+  if (genericEl) genericEl.style.display = type === 'transit' ? 'none' : '';
+  if (transitEl) transitEl.style.display = type === 'transit' ? '' : 'none';
+  const labelEl = document.getElementById('allow-entry-val-label');
+  const valEl   = document.getElementById('allow-entry-value');
+  if (type === 'tailswap') { if(labelEl) labelEl.textContent=''; if(valEl) valEl.style.display='none'; }
+  else if (type === 'night') { if(labelEl) labelEl.textContent='Hours'; if(valEl){ valEl.style.display=''; valEl.placeholder='e.g. 4'; } }
+  updateTransitPreview();
+}
+
+function updateTransitPreview() {
+  const previewEl = document.getElementById('transit-preview');
+  if (!previewEl) return;
+  const r = applyTransitRule(
+    document.getElementById('transit-sched-arr')?.value,
+    document.getElementById('transit-sched-dep')?.value,
+    document.getElementById('transit-actual-arr')?.value,
+    document.getElementById('transit-actual-dep')?.value
+  );
+  if (!r) { previewEl.textContent = ''; return; }
+  const billable = r.billableMins >= 90;
+  const cappedMins = Math.min(r.billableMins, 240);
+  const ruleTag = r.useScheduled
+    ? `<span style="color:var(--cyan)">Scheduled used</span> (diff ${r.diff}min ≤ 15min)`
+    : `<span style="color:var(--amber)">Actual used</span> (diff ${r.diff}min > 15min)`;
+  previewEl.innerHTML = `Sched: <strong>${r.schedMins}min</strong> · Actual: <strong>${r.actualMins}min</strong> · ${ruleTag}<br>` +
+    `Billable: <strong style="color:${billable?'var(--green)':'var(--red)'}">${r.billableMins}min${r.billableMins>240?' → capped at 4h':''}</strong>` +
+    (billable ? '' : ' <span style="color:var(--red)">(under 90min — not billable)</span>');
+}
+
 function logAllowanceEntry() {
   const type = document.getElementById('allow-entry-type').value;
   const date = document.getElementById('allow-entry-date').value;
-  const val  = parseFloat(document.getElementById('allow-entry-value').value);
-
   if (!date) { alert('Please select a date.'); return; }
-  if (type !== 'tailswap' && (!val || val <= 0)) { alert('Please enter a valid value.'); return; }
 
   const entries = getAllowanceEntries();
-  entries.push({
-    id: Date.now() + Math.random(),
-    type, date,
-    value: type === 'tailswap' ? 1 : val
-  });
+  let entry = { id: Date.now() + Math.random(), type, date };
+
+  if (type === 'tailswap') {
+    entry.value = 1;
+
+  } else if (type === 'night') {
+    const val = parseFloat(document.getElementById('allow-entry-value').value);
+    if (!val || val <= 0) { alert('Please enter a valid number of hours.'); return; }
+    entry.value = val;
+
+  } else if (type === 'transit') {
+    const schedArr  = document.getElementById('transit-sched-arr').value;
+    const schedDep  = document.getElementById('transit-sched-dep').value;
+    const actualArr = document.getElementById('transit-actual-arr').value;
+    const actualDep = document.getElementById('transit-actual-dep').value;
+    if (!schedArr || !schedDep || !actualArr || !actualDep) {
+      alert('Please enter all four transit times (scheduled and actual arrival/departure).'); return;
+    }
+    const r = applyTransitRule(schedArr, schedDep, actualArr, actualDep);
+    if (!r) { alert('Could not calculate halt duration.'); return; }
+    // Store both raw times and the resolved billable minutes
+    entry.schedArr   = schedArr;
+    entry.schedDep   = schedDep;
+    entry.actualArr  = actualArr;
+    entry.actualDep  = actualDep;
+    entry.schedMins  = r.schedMins;
+    entry.actualMins = r.actualMins;
+    entry.diff       = r.diff;
+    entry.useScheduled = r.useScheduled;
+    entry.value      = r.billableMins; // minutes used for billing
+  }
+
+  entries.push(entry);
   saveAllowanceEntries(entries);
 
+  // Reset transit fields
+  ['transit-sched-arr','transit-sched-dep','transit-actual-arr','transit-actual-dep'].forEach(id => {
+    const el = document.getElementById(id); if(el) el.value='';
+  });
   document.getElementById('allow-entry-value').value = '';
+  const previewEl = document.getElementById('transit-preview');
+  if (previewEl) previewEl.innerHTML = '';
   renderAllowance();
 
-  const resEl = document.getElementById('log-result');
-  // No log-result on this page — show inline confirmation instead
   const labelMap = { night:'Night Allowance', tailswap:'Tail-swap', transit:'Transit Halt' };
   const summaryEl = document.getElementById('allowance-summary');
   if (summaryEl) {
@@ -3958,21 +4066,10 @@ function logAllowanceEntry() {
 
 function deleteAllowanceEntry(id) {
   let entries = getAllowanceEntries();
-  entries = entries.filter(e => e.id !== id);
+  entries = entries.filter(e => String(e.id) !== String(id));
   saveAllowanceEntries(entries);
   renderAllowance();
 }
-
-document.addEventListener('change', function(e) {
-  if (e.target && e.target.id === 'allow-entry-type') {
-    const labelEl = document.getElementById('allow-entry-val-label');
-    const valEl   = document.getElementById('allow-entry-value');
-    if (!labelEl || !valEl) return;
-    if (e.target.value === 'night')    { labelEl.textContent = 'Hours';   valEl.style.display=''; valEl.placeholder='e.g. 4'; }
-    if (e.target.value === 'transit')  { labelEl.textContent = 'Minutes'; valEl.style.display=''; valEl.placeholder='e.g. 120'; }
-    if (e.target.value === 'tailswap') { labelEl.textContent = 'Count (auto = 1)'; valEl.style.display='none'; }
-  }
-});
 
 function setAllowRank() {
   const cfg = getAllowanceConfig();
@@ -4104,9 +4201,10 @@ function renderAllowance() {
   const tailswapCount = tailswapEntries.length;
   const tailswapAmount = tailswapCount * rates.tailSwap;
 
-  // Transit halt: only counts if >90min, capped at 4h, billed per hour
+  // Transit halt: entry.value = billable minutes (already resolved via ±15min rule)
+  // Qualifies if ≥90min, capped at 4h (240min), billed per hour
   const transitTotalMinsCapped = transitEntries.reduce((s,e) => {
-    if (e.value <= 90) return s;
+    if (e.value < 90) return s;
     return s + Math.min(e.value, 240);
   }, 0);
   const transitHrs = transitTotalMinsCapped / 60;
@@ -4237,16 +4335,33 @@ function renderAllowance() {
     if (transitEntries.length) {
       html += `<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:14px 0 6px">Transit Halts</div>`;
       html += transitEntries.map(e => {
-        const billable = e.value > 90;
-        const billedMins = Math.min(e.value, 240);
-        const amt = billable ? (billedMins/60)*rates.transitPerHr : 0;
+        const billable   = e.value >= 90;
+        const cappedMins = Math.min(e.value, 240);
+        const amt        = billable ? (cappedMins/60)*rates.transitPerHr : 0;
+        // Build detail line for new entries (with scheduled/actual stored)
+        let detail = '';
+        if (e.schedMins != null) {
+          const ruleLabel = e.useScheduled
+            ? `<span style="color:var(--cyan)">Scheduled (diff ${e.diff}min ≤ 15min)</span>`
+            : `<span style="color:var(--amber)">Actual (diff ${e.diff}min > 15min)</span>`;
+          detail = `<div style="font-size:9px;margin-top:3px;color:var(--muted)">
+            Sched: ${e.schedArr}→${e.schedDep} (${e.schedMins}min) · Actual: ${e.actualArr}→${e.actualDep} (${e.actualMins}min)<br>
+            Rule: ${ruleLabel} → ${e.value}min billable${e.value>240?' → capped at 4h':''}
+          </div>`;
+        } else {
+          detail = `<div style="font-size:9px;color:var(--muted);margin-top:2px">${e.value}min</div>`;
+        }
         return `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--panel2);
-          border-radius:8px;margin-bottom:5px;font-size:11px">
-          <span>${fmtDate(e.date)} · ${e.value}min ${!billable?'<span style="color:var(--muted)">(under 90min, not billable)</span>':''}</span>
-          <div style="display:flex;align-items:center;gap:8px">
-            <strong style="color:${billable?'var(--text)':'var(--muted)'}">₹${amt.toLocaleString('en-IN',{maximumFractionDigits:0})}</strong>
-            <button onclick="deleteAllowanceEntry(${e.id})" style="background:none;border:none;color:var(--red);font-size:14px;cursor:pointer">🗑</button>
+        <div style="padding:8px 12px;background:var(--panel2);border-radius:8px;margin-bottom:5px;font-size:11px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div>
+              <div>${fmtDate(e.date)} ${!billable?'<span style="color:var(--red);font-size:9px">under 90min — not billable</span>':''}</div>
+              ${detail}
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;margin-left:8px">
+              <strong style="color:${billable?'var(--text)':'var(--muted)'}">₹${amt.toLocaleString('en-IN',{maximumFractionDigits:0})}</strong>
+              <button onclick="deleteAllowanceEntry(${e.id})" style="background:none;border:none;color:var(--red);font-size:14px;cursor:pointer">🗑</button>
+            </div>
           </div>
         </div>`;
       }).join('');
@@ -4670,7 +4785,7 @@ function pushDuty(d) {
 // Show/hide flight-only fields based on duty type
 function logDtypeChange() {
   const dtype = document.getElementById('l-dtype').value;
-  const isStandby    = dtype.startsWith('standby') || dtype === 'simulator';
+  const isStandby    = dtype.startsWith('standby');
   const isDeadhead   = dtype === 'positioning';
   const isFlightDH   = dtype === 'flight-deadhead';
   const showPax      = isDeadhead || isFlightDH;
@@ -4683,7 +4798,7 @@ function logDtypeChange() {
 
   // Block hours + landings: hidden for deadhead-only
   const blockEl = document.getElementById('field-block-land');
-  if (blockEl) blockEl.style.display = (isDeadhead || isStandby) ? 'none' : '';
+  if (blockEl) blockEl.style.display = isDeadhead ? 'none' : (isStandby ? 'none' : '');
 
   // Pax hours: shown for deadhead-only AND flight+deadhead
   const paxEl = document.getElementById('field-pax');
