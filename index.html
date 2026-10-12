@@ -690,8 +690,7 @@ Debriefing time: 2300"></textarea>
         <input type="date" id="allow-entry-date">
       </div>
     </div>
-
-    <!-- Non-transit fields (night hrs) -->
+    <!-- Generic (night hrs / tailswap) -->
     <div id="allow-field-generic" style="margin-bottom:10px">
       <div class="frow" style="margin-bottom:0">
         <div class="fg" style="margin:0">
@@ -702,7 +701,7 @@ Debriefing time: 2300"></textarea>
       </div>
     </div>
 
-    <!-- Transit halt fields — swipeable scheduled/actual duration -->
+    <!-- Transit halt — scheduled required, actual optional -->
     <div id="allow-field-transit" style="display:none;margin-bottom:10px">
 
       <!-- Tab switcher -->
@@ -711,13 +710,13 @@ Debriefing time: 2300"></textarea>
           style="flex:1;text-align:center;padding:7px;border-radius:7px;font-size:11px;font-weight:700;
                  cursor:pointer;background:var(--cyan);color:#000;transition:all .2s;
                  -webkit-tap-highlight-color:transparent;touch-action:manipulation">
-          Scheduled
+          Scheduled ✱
         </div>
         <div id="transit-tab-actual" ontouchstart="" onclick="switchTransitTab('actual')"
           style="flex:1;text-align:center;padding:7px;border-radius:7px;font-size:11px;font-weight:700;
                  cursor:pointer;background:var(--panel3);color:var(--muted);transition:all .2s;
                  -webkit-tap-highlight-color:transparent;touch-action:manipulation">
-          Actual
+          Actual (optional)
         </div>
       </div>
 
@@ -728,7 +727,7 @@ Debriefing time: 2300"></textarea>
 
         <!-- Scheduled halt -->
         <div id="transit-card-sched">
-          <label class="fl">Scheduled halt (minutes)</label>
+          <label class="fl">Scheduled halt (minutes) <span style="color:var(--red)">✱</span></label>
           <div style="font-size:10px;color:var(--muted);margin-bottom:8px">Turnaround time from AvioBook</div>
           <input type="number" id="transit-sched-mins" min="0" max="999" placeholder="e.g. 105"
             oninput="updateTransitPreview()"
@@ -736,14 +735,14 @@ Debriefing time: 2300"></textarea>
                    color:var(--text);font-family:var(--mono);font-size:22px;padding:10px 14px;
                    text-align:center;box-sizing:border-box">
           <div style="font-size:10px;color:var(--muted);margin-top:6px;text-align:center">
-            ← Swipe left or tap <strong style="color:var(--cyan)">Actual</strong> to enter actual halt
+            Swipe left or tap <strong style="color:var(--cyan)">Actual</strong> to add actual halt (optional)
           </div>
         </div>
 
-        <!-- Actual halt (hidden initially) -->
+        <!-- Actual halt (optional) -->
         <div id="transit-card-actual" style="display:none">
-          <label class="fl">Actual halt (minutes)</label>
-          <div style="font-size:10px;color:var(--muted);margin-bottom:8px">Observed turnaround on the day</div>
+          <label class="fl">Actual halt (minutes) <span style="color:var(--muted)">(optional)</span></label>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:8px">Leave blank to add later from the log</div>
           <input type="number" id="transit-actual-mins" min="0" max="999" placeholder="e.g. 120"
             oninput="updateTransitPreview()"
             style="width:100%;background:var(--panel3);border:1px solid var(--edge2);border-radius:8px;
@@ -3965,26 +3964,16 @@ function shiftAllowMonth(delta) {
   renderAllowance();
 }
 
-// ── Transit halt helpers ──
-// ±15min rule using direct minute inputs
-function applyTransitRule(schedMins, actualMins) {
-  if (schedMins === null || actualMins === null) return null;
-  const diff = Math.abs(schedMins - actualMins);
-  const useScheduled = diff <= 15;
-  const billableMins = useScheduled ? schedMins : actualMins;
-  return { schedMins, actualMins, diff, useScheduled, billableMins };
-}
-
-// Transit tab switcher and swipe
+// ── Transit tab switcher & swipe ──
 var _transitTab = 'sched';
 var _transitTouchX = 0;
 
 function switchTransitTab(tab) {
   _transitTab = tab;
-  const schedCard  = document.getElementById('transit-card-sched');
-  const actualCard = document.getElementById('transit-card-actual');
-  const schedTab   = document.getElementById('transit-tab-sched');
-  const actualTab  = document.getElementById('transit-tab-actual');
+  var schedCard  = document.getElementById('transit-card-sched');
+  var actualCard = document.getElementById('transit-card-actual');
+  var schedTab   = document.getElementById('transit-tab-sched');
+  var actualTab  = document.getElementById('transit-tab-actual');
   if (tab === 'sched') {
     if (schedCard)  schedCard.style.display  = '';
     if (actualCard) actualCard.style.display = 'none';
@@ -3999,118 +3988,160 @@ function switchTransitTab(tab) {
   updateTransitPreview();
 }
 
-function transitTouchStart(e) {
-  _transitTouchX = e.touches[0].clientX;
-}
-
+function transitTouchStart(e) { _transitTouchX = e.touches[0].clientX; }
 function transitTouchEnd(e) {
-  const dx = e.changedTouches[0].clientX - _transitTouchX;
+  var dx = e.changedTouches[0].clientX - _transitTouchX;
   if (Math.abs(dx) > 40) {
     if (dx < 0 && _transitTab === 'sched') switchTransitTab('actual');
     if (dx > 0 && _transitTab === 'actual') switchTransitTab('sched');
   }
 }
 
+// ±15min rule using direct minute inputs
+function applyTransitRule(schedMins, actualMins) {
+  if (schedMins == null || actualMins == null) return null;
+  var diff = Math.abs(schedMins - actualMins);
+  var useScheduled = diff <= 15;
+  var billableMins = useScheduled ? schedMins : actualMins;
+  return { schedMins, actualMins, diff, useScheduled, billableMins };
+}
+
 function allowEntryTypeChange() {
-  const type = document.getElementById('allow-entry-type').value;
-  const genericEl  = document.getElementById('allow-field-generic');
-  const transitEl  = document.getElementById('allow-field-transit');
+  var type = document.getElementById('allow-entry-type').value;
+  var genericEl = document.getElementById('allow-field-generic');
+  var transitEl = document.getElementById('allow-field-transit');
   if (genericEl) genericEl.style.display = type === 'transit' ? 'none' : '';
   if (transitEl) transitEl.style.display = type === 'transit' ? '' : 'none';
-  const labelEl = document.getElementById('allow-entry-val-label');
-  const valEl   = document.getElementById('allow-entry-value');
+  var labelEl = document.getElementById('allow-entry-val-label');
+  var valEl   = document.getElementById('allow-entry-value');
   if (type === 'tailswap') { if(labelEl) labelEl.textContent=''; if(valEl) valEl.style.display='none'; }
   else if (type === 'night') { if(labelEl) labelEl.textContent='Hours'; if(valEl){ valEl.style.display=''; valEl.placeholder='e.g. 4'; } }
-  // Reset to scheduled tab
   switchTransitTab('sched');
 }
 
 function updateTransitPreview() {
-  const previewEl  = document.getElementById('transit-preview');
+  var previewEl = document.getElementById('transit-preview');
   if (!previewEl) return;
-  const schedVal  = parseInt(document.getElementById('transit-sched-mins')?.value) || null;
-  const actualVal = parseInt(document.getElementById('transit-actual-mins')?.value) || null;
+  var schedEl  = document.getElementById('transit-sched-mins');
+  var actualEl = document.getElementById('transit-actual-mins');
+  var schedVal  = schedEl  && schedEl.value  ? parseInt(schedEl.value)  : null;
+  var actualVal = actualEl && actualEl.value ? parseInt(actualEl.value) : null;
 
-  // Only show preview when both are entered
-  if (!schedVal && !actualVal) { previewEl.style.display='none'; previewEl.innerHTML=''; return; }
-  if (!schedVal || !actualVal) {
+  if (!schedVal) { previewEl.style.display='none'; previewEl.innerHTML=''; return; }
+  if (!actualVal) {
     previewEl.style.display='';
-    previewEl.innerHTML = schedVal
-      ? `Scheduled: <strong>${schedVal}min</strong> — enter actual to see rule`
-      : `Actual: <strong>${actualVal}min</strong> — enter scheduled to see rule`;
+    var billable = schedVal >= 90;
+    previewEl.innerHTML = 'Scheduled: <strong>' + schedVal + 'min</strong> — ' +
+      (billable
+        ? '<span style="color:var(--amber)">Actual not entered yet — will finalise on save</span>'
+        : '<span style="color:var(--red)">Under 90min, not billable</span>');
     return;
   }
-
-  const r = applyTransitRule(schedVal, actualVal);
-  if (!r) { previewEl.style.display='none'; return; }
-  const billable = r.billableMins >= 90;
-  const ruleTag  = r.useScheduled
-    ? `<span style="color:var(--cyan)">Scheduled used</span> (diff ${r.diff}min ≤ 15min)`
-    : `<span style="color:var(--amber)">Actual used</span> (diff ${r.diff}min > 15min)`;
+  var r = applyTransitRule(schedVal, actualVal);
+  var billable = r.billableMins >= 90;
+  var ruleTag  = r.useScheduled
+    ? '<span style="color:var(--cyan)">Scheduled used</span> (diff ' + r.diff + 'min ≤ 15min)'
+    : '<span style="color:var(--amber)">Actual used</span> (diff ' + r.diff + 'min > 15min)';
   previewEl.style.display = '';
   previewEl.innerHTML =
-    `Sched <strong>${r.schedMins}min</strong> · Actual <strong>${r.actualMins}min</strong> · ${ruleTag}<br>` +
-    `Billable: <strong style="color:${billable?'var(--green)':'var(--red)'}">${r.billableMins}min${r.billableMins>240?' → capped 4h':''}</strong>` +
+    'Sched <strong>' + r.schedMins + 'min</strong> · Actual <strong>' + r.actualMins + 'min</strong> · ' + ruleTag + '<br>' +
+    'Billable: <strong style="color:' + (billable?'var(--green)':'var(--red)') + '">' + r.billableMins + 'min' +
+    (r.billableMins > 240 ? ' → capped 4h' : '') + '</strong>' +
     (!billable ? ' <span style="color:var(--red)">(under 90min, not billable)</span>' : '');
 }
 
 function logAllowanceEntry() {
-  const type = document.getElementById('allow-entry-type').value;
-  const date = document.getElementById('allow-entry-date').value;
+  var type = document.getElementById('allow-entry-type').value;
+  var date = document.getElementById('allow-entry-date').value;
   if (!date) { alert('Please select a date.'); return; }
 
-  const entries = getAllowanceEntries();
-  let entry = { id: Date.now() + Math.random(), type, date };
+  var entries = getAllowanceEntries();
+  var entry = { id: Date.now() + Math.random(), type, date };
 
   if (type === 'tailswap') {
     entry.value = 1;
-
   } else if (type === 'night') {
-    const val = parseFloat(document.getElementById('allow-entry-value').value);
+    var val = parseFloat(document.getElementById('allow-entry-value').value);
     if (!val || val <= 0) { alert('Please enter a valid number of hours.'); return; }
     entry.value = val;
-
   } else if (type === 'transit') {
-    const schedMins  = parseInt(document.getElementById('transit-sched-mins')?.value);
-    const actualMins = parseInt(document.getElementById('transit-actual-mins')?.value);
+    var schedMins = parseInt(document.getElementById('transit-sched-mins')?.value) || 0;
     if (!schedMins || schedMins <= 0) { alert('Please enter the scheduled halt duration.'); return; }
-    if (!actualMins || actualMins <= 0) { alert('Please enter the actual halt duration.'); return; }
-    const r = applyTransitRule(schedMins, actualMins);
-    if (!r) { alert('Could not calculate halt duration.'); return; }
-    entry.schedMins    = r.schedMins;
-    entry.actualMins   = r.actualMins;
-    entry.diff         = r.diff;
-    entry.useScheduled = r.useScheduled;
-    entry.value        = r.billableMins;
+    var actualRaw  = document.getElementById('transit-actual-mins')?.value;
+    var actualMins = actualRaw ? (parseInt(actualRaw) || null) : null;
+    entry.schedMins = schedMins;
+    entry.actualMins = actualMins;
+    if (actualMins && actualMins > 0) {
+      var r = applyTransitRule(schedMins, actualMins);
+      entry.diff         = r.diff;
+      entry.useScheduled = r.useScheduled;
+      entry.value        = r.billableMins;
+      entry.pending      = false;
+    } else {
+      // Actual not entered — provisional using scheduled, flagged as pending
+      entry.diff         = null;
+      entry.useScheduled = null;
+      entry.value        = schedMins;
+      entry.pending      = true;
+    }
   }
 
   entries.push(entry);
   saveAllowanceEntries(entries);
 
-  // Reset transit fields
-  ['transit-sched-mins','transit-actual-mins'].forEach(id => {
-    const el = document.getElementById(id); if(el) el.value='';
-  });
+  // Reset fields
+  var valEl = document.getElementById('allow-entry-value');
+  if (valEl) valEl.value = '';
+  var schedEl = document.getElementById('transit-sched-mins');
+  if (schedEl) schedEl.value = '';
+  var actEl = document.getElementById('transit-actual-mins');
+  if (actEl) actEl.value = '';
+  var prevEl = document.getElementById('transit-preview');
+  if (prevEl) { prevEl.style.display='none'; prevEl.innerHTML=''; }
   switchTransitTab('sched');
-  document.getElementById('allow-entry-value').value = '';
-  const previewEl = document.getElementById('transit-preview');
-  if (previewEl) previewEl.innerHTML = '';
   renderAllowance();
 
-  const labelMap = { night:'Night Allowance', tailswap:'Tail-swap', transit:'Transit Halt' };
-  const summaryEl = document.getElementById('allowance-summary');
+  var labelMap = { night:'Night Allowance', tailswap:'Tail-swap', transit:'Transit Halt' };
+  var summaryEl = document.getElementById('allowance-summary');
   if (summaryEl) {
-    const toast = document.createElement('div');
+    var toast = document.createElement('div');
     toast.style.cssText = 'background:var(--green-dim);border:1px solid rgba(0,230,118,.35);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:var(--green);display:flex;align-items:center;gap:8px;animation:fadeUp .2s ease';
-    toast.innerHTML = `<span style="font-size:16px">✅</span> ${labelMap[type]} logged for ${fmtDate(date)}`;
+    toast.innerHTML = '<span style="font-size:16px">✅</span> ' + (labelMap[type]||type) + ' logged for ' + fmtDate(date) + (entry.pending ? ' <span style="color:var(--amber)">(pending actual)</span>' : '');
     summaryEl.parentNode.insertBefore(toast, summaryEl);
-    setTimeout(()=>toast.remove(), 4000);
+    setTimeout(function(){ toast.remove(); }, 4000);
   }
 }
 
 function deleteAllowanceEntry(id) {
-  let entries = getAllowanceEntries();
-  entries = entries.filter(e => String(e.id) !== String(id));
+  var entries = getAllowanceEntries();
+  entries = entries.filter(function(e){ return String(e.id) !== String(id); });
+  saveAllowanceEntries(entries);
+  renderAllowance();
+}
+
+// Swipe-to-edit for pending transit entries in breakdown
+var _breakdownTouchX = 0;
+function editTransitActualSwipe(e, id) {
+  var dx = e.changedTouches[0].clientX - (e.currentTarget._touchStartX || 0);
+  if (dx < -40) editTransitActual(id);
+}
+
+// Edit actual halt on a pending transit entry
+function editTransitActual(id) {
+  var entries = getAllowanceEntries();
+  var idx = entries.findIndex(function(e){ return String(e.id) === String(id); });
+  if (idx === -1) return;
+  var e = entries[idx];
+  var actualStr = prompt('Enter actual halt duration (minutes) for ' + fmtDate(e.date) + ':', '');
+  if (actualStr === null) return; // cancelled
+  var actualMins = parseInt(actualStr);
+  if (!actualMins || actualMins <= 0) { alert('Please enter a valid number of minutes.'); return; }
+  var r = applyTransitRule(e.schedMins, actualMins);
+  entries[idx].actualMins   = actualMins;
+  entries[idx].diff         = r.diff;
+  entries[idx].useScheduled = r.useScheduled;
+  entries[idx].value        = r.billableMins;
+  entries[idx].pending      = false;
   saveAllowanceEntries(entries);
   renderAllowance();
 }
@@ -4245,14 +4276,16 @@ function renderAllowance() {
   const tailswapCount = tailswapEntries.length;
   const tailswapAmount = tailswapCount * rates.tailSwap;
 
-  // Transit halt: entry.value = billable minutes (already resolved via ±15min rule)
-  // Qualifies if ≥90min, capped at 4h (240min), billed per hour
+  // Transit halt: pending entries excluded from total (actual not confirmed yet)
+  // Qualifies if ≥90min, capped at 4h (240min)
   const transitTotalMinsCapped = transitEntries.reduce((s,e) => {
+    if (e.pending) return s; // not counted until actual is confirmed
     if (e.value < 90) return s;
     return s + Math.min(e.value, 240);
   }, 0);
   const transitHrs = transitTotalMinsCapped / 60;
   const transitAmount = transitHrs * rates.transitPerHr;
+  const transitPendingCount = transitEntries.filter(e => e.pending).length;
 
   const grandTotal = layoverAmount + deadheadAmount + nightAmount + tailswapAmount + transitAmount;
 
@@ -4289,7 +4322,7 @@ function renderAllowance() {
           <div style="background:var(--panel2);border-radius:8px;padding:10px;grid-column:1/-1">
             <div style="color:var(--muted)">⏱ Transit Halts</div>
             <div style="font-size:15px;font-weight:700;color:var(--text)">₹${transitAmount.toLocaleString('en-IN')}</div>
-            <div style="color:var(--muted)">${transitEntries.length} halt${transitEntries.length!==1?'s':''} · ${transitHrs.toFixed(1)}h billable</div>
+            <div style="color:var(--muted)">${transitEntries.length} halt${transitEntries.length!==1?'s':''} · ${transitHrs.toFixed(1)}h billable${transitPendingCount>0?` · <span style="color:var(--amber)">${transitPendingCount} pending actual</span>`:''}</div>
           </div>
         </div>
         ${intlLayoverDuties.length ? `
@@ -4379,31 +4412,43 @@ function renderAllowance() {
     if (transitEntries.length) {
       html += `<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:14px 0 6px">Transit Halts</div>`;
       html += transitEntries.map(e => {
-        const billable   = e.value >= 90;
+        const isPending  = e.pending === true;
+        const billable   = !isPending && e.value >= 90;
         const cappedMins = Math.min(e.value, 240);
         const amt        = billable ? (cappedMins/60)*rates.transitPerHr : 0;
-        // Build detail line for new entries (with scheduled/actual stored)
+
         let detail = '';
-        if (e.schedMins != null && e.actualMins != null) {
+        if (isPending) {
+          detail = `<div style="font-size:9px;color:var(--amber);margin-top:3px">
+            ⏳ Sched: ${e.schedMins}min · Actual: not entered — swipe to add
+          </div>`;
+        } else if (e.schedMins != null && e.actualMins != null) {
           const ruleLabel = e.useScheduled
             ? `<span style="color:var(--cyan)">Scheduled used</span> (diff ${e.diff}min ≤ 15min)`
             : `<span style="color:var(--amber)">Actual used</span> (diff ${e.diff}min > 15min)`;
-          detail = `<div style="font-size:9px;margin-top:3px;color:var(--muted)">
-            Sched: <strong>${e.schedMins}min</strong> · Actual: <strong>${e.actualMins}min</strong> · ${ruleLabel}<br>
-            Billable: ${e.value}min${e.value>240?' → capped at 4h':''}
+          detail = `<div style="font-size:9px;color:var(--muted);margin-top:3px">
+            Sched ${e.schedMins}min · Actual ${e.actualMins}min · ${ruleLabel}<br>
+            Billable: ${e.value}min${e.value>240?' → capped 4h':''}
           </div>`;
         } else {
           detail = `<div style="font-size:9px;color:var(--muted);margin-top:2px">${e.value}min</div>`;
         }
+
         return `
-        <div style="padding:8px 12px;background:var(--panel2);border-radius:8px;margin-bottom:5px;font-size:11px">
+        <div style="padding:8px 12px;background:${isPending?'rgba(245,166,35,.08)':'var(--panel2)'};
+          border-radius:8px;margin-bottom:5px;font-size:11px;
+          border:1px solid ${isPending?'rgba(245,166,35,.3)':'transparent'}"
+          ${isPending ? `ontouchstart="" ontouchend="editTransitActualSwipe(event,${e.id})"` : ''}>
           <div style="display:flex;justify-content:space-between;align-items:flex-start">
-            <div>
-              <div>${fmtDate(e.date)} ${!billable?'<span style="color:var(--red);font-size:9px">under 90min — not billable</span>':''}</div>
+            <div style="flex:1">
+              <div>${fmtDate(e.date)} ${isPending?'<span style="color:var(--amber);font-size:9px">⏳ PENDING ACTUAL</span>':(!billable?'<span style="color:var(--red);font-size:9px">under 90min</span>':'')}</div>
               ${detail}
             </div>
-            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;margin-left:8px">
-              <strong style="color:${billable?'var(--text)':'var(--muted)'}">₹${amt.toLocaleString('en-IN',{maximumFractionDigits:0})}</strong>
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:8px">
+              ${isPending
+                ? `<button onclick="editTransitActual(${e.id})" style="background:var(--amber);border:none;color:#000;font-size:10px;font-weight:700;padding:4px 8px;border-radius:6px;cursor:pointer;touch-action:manipulation">+ Actual</button>`
+                : `<strong style="color:${billable?'var(--text)':'var(--muted)'}">₹${amt.toLocaleString('en-IN',{maximumFractionDigits:0})}</strong>`
+              }
               <button onclick="deleteAllowanceEntry(${e.id})" style="background:none;border:none;color:var(--red);font-size:14px;cursor:pointer">🗑</button>
             </div>
           </div>
