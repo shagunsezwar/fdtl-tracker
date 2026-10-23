@@ -1715,9 +1715,7 @@ function buildDutiesHTML(list, allSorted) {
     // ── Rest calculation — §2.10.1 + §2.10.5
     let restH = null, restOk = true, minR = 12, penalty = false, earliestLegalDT = null;
     if (prev && prev.debrief && d.report) {
-      // 10h min rest (no travel penalty) only when the NEXT duty is a deadhead (positioning)
-      const nextIsDeadhead = d.dtype === 'positioning';
-      const isDeadhead = nextIsDeadhead;
+      const isDeadhead = prev.dtype === 'flight-deadhead';
       penalty = isDeadhead ? false : prev.travelPenalty !== false;
       const pDebDT = getDebriefDT(prev);
       const cRepDT = getReportDT(d);
@@ -1779,7 +1777,7 @@ function buildDutiesHTML(list, allSorted) {
         <div style="flex:1">
           <div style="font-weight:700;color:${restOk?'var(--green)':'var(--red)'}">
             Rest: ${restHH}h ${String(restMM).padStart(2,'00')}m
-            <span style="font-size:9px;font-weight:400;color:var(--muted);margin-left:4px">(min ${minR}h${penalty?'+30m':''} · §2.10.1${penalty?' + §2.10.5':''}${minR===10?' · deadhead':''})</span>
+            <span style="font-size:9px;font-weight:400;color:var(--muted);margin-left:4px">(min ${minR}h${penalty?'+30m':''} · §2.10.1${penalty?' + §2.10.5':''})</span>
           </div>
           <div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.8">
             ${startLabel}: <strong>${fmt2(rStart)}</strong> → Ends: ${fmt2(rEnd)}<br>
@@ -2779,6 +2777,35 @@ function renderNextReport() {
       }
     })() : '';
 
+    // ── Max delay possible: FDP ends at − planned eng-off ──
+    // FDP end = report + maxFDP (for current landing count)
+    const Lmax = getLimits(currentDuty.landings||2, currentDuty.night||'no', currentDuty.crew||'2p');
+    const fdpEndDT   = new Date(istDT(currentDuty.date, currentDuty.report).getTime() + Lmax.maxFDP * 3600000);
+    const engOffDT   = istDT(currentDuty.date, plannedEngOff);
+    // midnight crossover — if engOff appears before report, push it forward
+    const repDTlive  = istDT(currentDuty.date, currentDuty.report);
+    const engOffDTadj = engOffDT < repDTlive ? new Date(engOffDT.getTime() + 86400000) : engOffDT;
+    const delayMs    = fdpEndDT - engOffDTadj - 30*60000; // −30min debrief buffer
+    const delayMins  = Math.floor(delayMs / 60000);
+    const delayH     = Math.floor(Math.max(0, delayMins) / 60);
+    const delayM     = Math.max(0, delayMins) % 60;
+    const delayOk    = delayMins > 0;
+    const delayCard  = !expiredFDP ? `
+    <div style="margin-top:10px;padding:10px 14px;
+      background:${delayOk?'var(--amber-dim)':'rgba(255,77,77,.12)'};
+      border:1px solid ${delayOk?'rgba(245,166,35,.4)':'rgba(255,77,77,.35)'};
+      border-radius:10px;font-size:11px">
+      <div style="font-weight:700;color:${delayOk?'var(--amber)':'var(--red)'};margin-bottom:4px">
+        ⏳ Max delay possible
+      </div>
+      <div style="color:var(--text);line-height:1.8">
+        FDP ends at: <strong>${fmtAsIST(fdpEndDT)}</strong> · Planned eng-off: <strong>${plannedEngOff}</strong><br>
+        ${delayOk
+          ? `Max delay: <strong style="color:var(--amber);font-size:13px">${delayH}h ${String(delayM).padStart(2,'0')}m</strong>`
+          : `<strong style="color:var(--red)">No buffer — eng-off already at FDP limit</strong>`}
+      </div>
+    </div>` : '';
+
     el.innerHTML = `<div class="nr-box" style="border-color:rgba(0,230,118,.35);background:linear-gradient(135deg,rgba(0,230,118,.07),rgba(0,128,80,.05))">
       <div class="nr-label" style="color:var(--green)">✈ DUTY LIVE — FDP active</div>
       ${sbBanner}
@@ -2792,6 +2819,7 @@ function renderNextReport() {
           : '<strong style="color:var(--red)">⛔ DEBRIEF TIME REACHED</strong>'}
         ${cf ? `<br>Total FDP: <strong style="color:var(--cyan)">${fmtH(cf.totalFDP)}</strong> · Ldg: <strong>${cf.landings}</strong>` : `<br>Max FT: <strong>${getLimits(currentDuty.landings||2,currentDuty.night||'no','2p').maxFT}h</strong> · Landings: <strong>${currentDuty.landings||'—'}</strong>`}
       </div>
+      ${delayCard}
     </div>`;
     recalcFDP();
     return;
